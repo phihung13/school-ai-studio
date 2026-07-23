@@ -33,11 +33,11 @@ function F({ label, hint, value, onChange, rows = 4, isAdmin }: { label: string;
 interface TutorStatus { url: string; email: string; configured: boolean; hasPassword: boolean; hasJwt: boolean }
 interface SettingsData { settings: Settings; packPreview: string; hasKey: boolean; model: string; keySource: "app" | "env" | null; keyTail: string; tutor: TutorStatus }
 
-// Model cho dropdown — id thật của Claude API
+// Model cho dropdown — id model trên OpenRouter (có thể gõ id khác trong tương lai)
 const AI_MODELS = [
-  { id: "claude-opus-4-8", label: "Opus 4.8 — chất lượng cao nhất" },
-  { id: "claude-sonnet-5", label: "Sonnet 5 — cân bằng" },
-  { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5 — nhanh & rẻ" },
+  { id: "deepseek/deepseek-v4-pro", label: "DeepSeek V4 Pro — mạnh nhất (khuyến nghị)" },
+  { id: "deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash — nhanh & siêu rẻ" },
+  { id: "deepseek/deepseek-v3.2", label: "DeepSeek V3.2 — ổn định, rẻ" },
 ];
 
 // ===== Kết nối app Gia sư (tutor): tài khoản teacher tutor để đẩy học liệu Chuẩn trường =====
@@ -138,7 +138,7 @@ function GeneralPanel({ me }: { me: User | null }) {
     try {
       await api("saveAiKey", { key: keyInput || undefined, model: modelSel });
       setKeyInput(""); setTestRes(null);
-      show("Đã lưu kết nối Claude — có hiệu lực ngay, không cần khởi động lại");
+      show("Đã lưu kết nối OpenRouter — có hiệu lực ngay, không cần khởi động lại");
       await refreshStatus();
     } catch (e) { show(e instanceof Error ? e.message : "Lỗi", "err"); }
     setAiBusy(null);
@@ -162,7 +162,7 @@ function GeneralPanel({ me }: { me: User | null }) {
       </p>
       <Card className={cls("mt-4 p-4", data.hasKey ? "border-ok-line bg-ok-bg/40" : "border-warn-line bg-warn-bg/40")}>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          <p className="flex items-center gap-1.5 text-sm font-semibold text-ink"><KeyRound size={16} className={data.hasKey ? "text-ok" : "text-warn"} aria-hidden />Kết nối Claude API</p>
+          <p className="flex items-center gap-1.5 text-sm font-semibold text-ink"><KeyRound size={16} className={data.hasKey ? "text-ok" : "text-warn"} aria-hidden />Kết nối OpenRouter (DeepSeek)</p>
           <span className="text-sm text-ink-2">
             {data.hasKey
               ? <>Đang dùng <b>AI thật</b> · model <b>{data.model}</b> · key {data.keySource === "app" ? "lưu trong app" : "từ biến môi trường"} (…{data.keyTail})</>
@@ -173,7 +173,7 @@ function GeneralPanel({ me }: { me: User | null }) {
           <>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <input type="password" value={keyInput} onChange={(e) => { setKeyInput(e.target.value); setTestRes(null); }}
-                placeholder={data.hasKey ? `Dán key mới để thay (đang dùng …${data.keyTail})` : "sk-ant-…"}
+                placeholder={data.hasKey ? `Dán key mới để thay (đang dùng …${data.keyTail})` : "sk-or-v1-…"}
                 autoComplete="off" spellCheck={false}
                 className="w-full max-w-sm rounded-md border border-line-strong bg-surface px-3 py-2 font-mono text-sm text-ink outline-none transition focus:border-brand" />
               <select value={modelSel} onChange={(e) => { setModelSel(e.target.value); setTestRes(null); }}

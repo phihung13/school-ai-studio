@@ -71,7 +71,8 @@ cp .env.example .env && nano .env
 Điền:
 - `STUDIO_IMAGE=ghcr.io/<owner>/<repo>:latest`  ← **bắt buộc**, khớp repo của bạn
 - `DEMO_PASSWORD=...`  ← đổi mật khẩu đăng nhập khác mặc định
-- `ANTHROPIC_API_KEY=...`  ← *tùy chọn* (có thể để trống rồi nhập trong **Cài đặt** của app)
+
+> **Key AI KHÔNG đặt trong `.env`.** Sau khi app chạy, đăng nhập tài khoản quản trị → **Cài đặt → Kết nối OpenRouter (DeepSeek)** → dán key `sk-or-v1-…` → **Kiểm tra** → **Lưu**. Key lưu trong DB (`data/studio.db`) nên **sống qua mọi lần redeploy** (nằm ở volume `./data`).
 
 ---
 
@@ -95,6 +96,7 @@ docker compose up -d     # chạy nền
 docker compose logs -f   # xem log khởi động (Ctrl-C để thoát log)
 ```
 Mở `http://<VPS_IP>:3000` → đăng nhập (vd `qt.hung` / mật khẩu `DEMO_PASSWORD`).
+→ Vào **Cài đặt → Kết nối OpenRouter** dán key `sk-or-v1-…` để bật AI thật (xem mục 3).
 
 ---
 

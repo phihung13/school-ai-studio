@@ -30,19 +30,20 @@ function nextAtoms(db: DB, atom: TreeNode): string[] {
 }
 
 // ============================================================
-// Tầng AI: nếu có ANTHROPIC_API_KEY thì gọi Claude thật,
-// nếu không thì dùng bộ soạn mô phỏng (mock composer) để mọi
-// tính năng vẫn chạy đầy đủ trong môi trường demo.
+// Tầng AI: nếu có OPENROUTER_API_KEY (hoặc key lưu trong app) thì gọi LLM thật
+// qua OpenRouter — chuẩn OpenAI, mặc định model DeepSeek; nếu không thì dùng bộ
+// soạn mô phỏng (mock composer) để mọi tính năng vẫn chạy đầy đủ trong môi trường demo.
 // ============================================================
 
 // Key/model ĐỘNG mỗi lượt gọi: ưu tiên Cài đặt trong app (db.settings — nhập từ UI, có hiệu lực NGAY
 // không cần restart) → fallback biến môi trường. Không có cả hai → bộ soạn ngoại tuyến.
-export function aiKey(db: DB): string { return (db.settings.anthropicApiKey || process.env.ANTHROPIC_API_KEY || "").trim(); }
-export function aiModel(db: DB): string { return (db.settings.anthropicModel || process.env.ANTHROPIC_MODEL || "claude-sonnet-5").trim(); }
+// Lưu trong field settings.anthropicApiKey/anthropicModel (GIỮ tên field cũ để khỏi migrate DB — nay chứa key/model OpenRouter).
+export function aiKey(db: DB): string { return (db.settings.anthropicApiKey || process.env.OPENROUTER_API_KEY || process.env.ANTHROPIC_API_KEY || "").trim(); }
+export function aiModel(db: DB): string { return (db.settings.anthropicModel || process.env.OPENROUTER_MODEL || process.env.ANTHROPIC_MODEL || "deepseek/deepseek-v4-pro").trim(); }
 export function hasAiKey(db: DB): boolean { return !!aiKey(db); }
 export function aiKeySource(db: DB): "app" | "env" | null {
   if (db.settings.anthropicApiKey?.trim()) return "app";
-  if (process.env.ANTHROPIC_API_KEY?.trim()) return "env";
+  if ((process.env.OPENROUTER_API_KEY || process.env.ANTHROPIC_API_KEY)?.trim()) return "env";
   return null;
 }
 
@@ -126,15 +127,26 @@ export function knowledgeContract(db: DB, atom: TreeNode, pkg: Pkg): string {
   return L.filter(Boolean).join("\n");
 }
 
-// ---------- Claude call (khi có key) ----------
-async function claudeJSON<T>(db: DB, system: string, prompt: string): Promise<T> {
-  const Anthropic = (await import("@anthropic-ai/sdk")).default;
-  const client = new Anthropic({ apiKey: aiKey(db) });
-  const msg = await client.messages.create({
-    model: aiModel(db), max_tokens: 12000, system, // trần thấp từng làm gói mức 3 bị CỤT JSON — 12k đủ cho bài dài nhất
-    messages: [{ role: "user", content: prompt + "\n\nTrả về DUY NHẤT một khối JSON hợp lệ, không kèm giải thích." }],
+// ---------- Gọi LLM qua OpenRouter (chuẩn OpenAI) — khi có key ----------
+const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+async function llmChat(key: string, model: string, messages: { role: string; content: string }[], maxTokens: number, jsonMode = false): Promise<{ text: string; model: string }> {
+  const res = await fetch(OPENROUTER_URL, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "X-Title": "VA Studio" },
+    body: JSON.stringify({ model, max_tokens: maxTokens, messages, ...(jsonMode ? { response_format: { type: "json_object" } } : {}) }),
   });
-  const text = msg.content.filter((b) => b.type === "text").map((b) => (b as { text: string }).text).join("");
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`);
+  const data = (await res.json()) as { choices?: { message?: { content?: string } }[]; model?: string; error?: { message?: string } };
+  if (data.error) throw new Error(data.error.message || "OpenRouter trả lỗi");
+  return { text: data.choices?.[0]?.message?.content || "", model: data.model || model };
+}
+
+async function claudeJSON<T>(db: DB, system: string, prompt: string): Promise<T> {
+  // trần 12k token: trần thấp từng làm gói mức 3 bị CỤT JSON — 12k đủ cho bài dài nhất
+  const { text } = await llmChat(aiKey(db), aiModel(db), [
+    { role: "system", content: system },
+    { role: "user", content: prompt + "\n\nTrả về DUY NHẤT một khối JSON hợp lệ, không kèm giải thích." },
+  ], 12000, true);
   const jsonStr = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
   return JSON.parse(jsonStr) as T;
 }
@@ -160,18 +172,15 @@ async function claudeJSONValidated<T>(db: DB, system: string, prompt: string, sc
 // ---------- Kiểm tra kết nối (nút "Kiểm tra" trong Cài đặt): gọi thật 1 lượt tí hon ----------
 export async function testAiConnection(key: string, model: string): Promise<{ ok: boolean; model: string; error?: string }> {
   try {
-    const Anthropic = (await import("@anthropic-ai/sdk")).default;
-    const client = new Anthropic({ apiKey: key });
-    const msg = await client.messages.create({ model, max_tokens: 16, messages: [{ role: "user", content: "Trả về đúng chữ: OK" }] });
-    const text = msg.content.filter((b) => b.type === "text").map((b) => (b as { text: string }).text).join("");
-    return { ok: text.toUpperCase().includes("OK"), model: msg.model };
+    const { text, model: used } = await llmChat(key, model, [{ role: "user", content: "Trả về đúng chữ: OK" }], 16);
+    return { ok: text.toUpperCase().includes("OK"), model: used };
   } catch (e) {
     const m = e instanceof Error ? e.message : String(e);
     // dịch các lỗi hay gặp cho người không rành kỹ thuật
-    const friendly = /401|authentication/i.test(m) ? "Key không hợp lệ (401) — kiểm tra lại chuỗi sk-ant-…"
-      : /404|not_found/i.test(m) ? `Model "${model}" không tồn tại với key này (404)`
+    const friendly = /401|403|auth|no auth|invalid|unauthor/i.test(m) ? "Key không hợp lệ — kiểm tra lại chuỗi sk-or-v1-…"
+      : /404|not.?found|not a valid model|no endpoints/i.test(m) ? `Model "${model}" không có trên OpenRouter (404)`
       : /429|rate/i.test(m) ? "Bị giới hạn lượt gọi (429) — thử lại sau ít phút"
-      : /credit|billing|402/i.test(m) ? "Tài khoản hết credit / chưa gắn thanh toán"
+      : /credit|billing|402|insufficient/i.test(m) ? "Tài khoản OpenRouter hết credit / chưa nạp"
       : m;
     return { ok: false, model, error: friendly };
   }

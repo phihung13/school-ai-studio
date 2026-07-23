@@ -184,8 +184,8 @@ export function AgentsPanel() {
 
         <Card className="mt-4 border-brand-line bg-brand-bg p-4 text-sm text-brand-ink">
           {data.hasKey
-            ? "Đang dùng Claude API"
-            : "Đang dùng bộ soạn mô phỏng — cắm ANTHROPIC_API_KEY để dùng AI thật"}
+            ? "Đang dùng OpenRouter (DeepSeek)"
+            : "Đang dùng bộ soạn mô phỏng — cắm OPENROUTER_API_KEY để dùng AI thật"}
         </Card>
 
         <div className="mt-5 grid gap-4 lg:grid-cols-2">

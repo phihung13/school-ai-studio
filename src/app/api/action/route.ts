@@ -498,25 +498,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
     case "saveAiKey": {
-      // Lưu/Xóa kết nối Claude từ UI Cài đặt — có hiệu lực NGAY (không cần restart server)
+      // Lưu/Xóa kết nối OpenRouter từ UI Cài đặt — có hiệu lực NGAY (không cần restart server)
       if (!isAdmin) return bad("Chỉ quản trị", 403);
       const { key, model } = body as { key?: string; model?: string };
       if (key !== undefined) {
         const k = String(key).trim();
-        if (k && !/^sk-ant-/.test(k)) return bad("Key không đúng dạng — phải bắt đầu bằng sk-ant-…");
+        if (k && !/^sk-or-/.test(k)) return bad("Key không đúng dạng — dùng key OpenRouter, bắt đầu bằng sk-or-v1-…");
         if (k) db.settings.anthropicApiKey = k; else delete db.settings.anthropicApiKey;
       }
       if (model !== undefined) {
         const m = String(model).trim().slice(0, 60);
         if (m) db.settings.anthropicModel = m; else delete db.settings.anthropicModel;
       }
-      logActivity(user.name, db.settings.anthropicApiKey ? "cập nhật" : "gỡ", "kết nối Claude API", "/settings?tab=general"); // không log key
+      logActivity(user.name, db.settings.anthropicApiKey ? "cập nhật" : "gỡ", "kết nối OpenRouter", "/settings?tab=general"); // không log key
       persist();
       const kNow = aiKey(db);
       return NextResponse.json({ ok: true, hasKey: !!kNow, keyTail: kNow ? kNow.slice(-4) : "", model: aiModel(db) });
     }
     case "testAiKey": {
-      // Gọi thử Claude 1 lượt tí hon: test key VỪA GÕ (chưa lưu) hoặc key đang có hiệu lực
+      // Gọi thử OpenRouter 1 lượt tí hon: test key VỪA GÕ (chưa lưu) hoặc key đang có hiệu lực
       if (!isAdmin) return bad("Chỉ quản trị", 403);
       const { key, model } = body as { key?: string; model?: string };
       const k = String(key || "").trim() || aiKey(db);
