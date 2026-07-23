@@ -9,6 +9,7 @@ import os from "os";
 import path from "path";
 import { slidesToMarp, renderMarpDeck, type MarpTheme, type MarpFormat } from "@/lib/slide-marp";
 import { splitMath, katexHtml, hasMath } from "@/lib/mathrender";
+import { assembleVeoPrompt, STYLE_BLOCK, SCHOOL_SETTING, CHAR_BIBLE, PAUSE_MECHANISM_VI, VEO_TECH_GUIDE_VI, RELEASE_CHECKLIST_VI } from "@/lib/video-kit";
 
 export const dynamic = "force-dynamic";
 
@@ -88,7 +89,8 @@ function wsBlocks(body: string): WsBlock[] {
 
 // ── Worker Typst (out-of-process): đổ JSON vào template .typ → PDF in đẹp <1s ──
 // extra: file phụ đặt cạnh main.typ (vd chart0.svg để template nhúng bằng image())
-const TYPST_BIN = path.join(process.cwd(), "workers", "typst", "typst.exe");
+const TYPST_BIN = process.env.TYPST_BIN
+  || path.join(process.cwd(), "workers", "typst", process.platform === "win32" ? "typst.exe" : "typst");
 async function typstPdf(template: string, data: unknown, extra?: Record<string, string>): Promise<Buffer | null> {
   if (!fs.existsSync(TYPST_BIN)) return null; // chưa cài binary → người gọi tự fallback DOCX
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "va-typst-"));
@@ -199,8 +201,8 @@ interface SectionContent { sections: { heading: string; body: string; chart?: Sl
 interface QuizContent { questions: { type: string; q: string; options?: string[]; answer: unknown; explanation?: string; dok?: number; misconceptionRef?: string }[] }
 interface MindmapContent { markdown: string; chart?: SlideChart }
 interface PodcastContent { script: { speaker: string; text: string; mood?: string }[] }
-interface VideoScene { beat?: string; setting?: string; visual: string; dialogue?: { speaker: string; line: string; action?: string }[]; animation?: string; mucTieu?: string; narration?: string; durationSec?: number }
-interface VideoContent { logline?: string; characters?: { name: string; role?: string }[]; scenes: VideoScene[]; durationSec?: number; style?: string }
+interface VideoScene { beat?: string; role?: "veo" | "avatar" | "graphics"; setting?: string; visual: string; dialogue?: { speaker: string; line: string; action?: string }[]; onScreenText?: string; animation?: string; veoAction?: string; veoCast?: string[]; mucTieu?: string; narration?: string; durationSec?: number }
+interface VideoContent { videoTitle?: string; logline?: string; characters?: { name: string; role?: string }[]; scenes: VideoScene[]; durationSec?: number; style?: string }
 
 // ══ PODCAST → MP3 giọng Việt THẬT (edge-tts, miễn phí) ══
 // Dùng chung cho variant=mp3, cho trình phát trong app, và để NHÚNG vào bản HTML tự chứa.
@@ -262,7 +264,8 @@ async function podcastMp3(script: { speaker: string; text: string; mood?: string
     }
     // ── HẬU KỲ (có ffmpeg trong workers/): nhạc hiệu mở/đóng + nghỉ 400ms giữa lượt thoại
     //    + loudnorm chuẩn podcast (-16 LUFS). Thiếu ffmpeg/jingle → ghép thẳng (cùng codec, phát được). ──
-    const FF = path.join(process.cwd(), "workers", "ffmpeg", "ffmpeg.exe");
+    const FF = process.env.FFMPEG_BIN
+      || path.join(process.cwd(), "workers", "ffmpeg", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
     const jgl = (f: string) => path.join(process.cwd(), "workers", "podcast", f);
     if (fs.existsSync(FF) && ["intro.mp3", "outro.mp3", "sil400.mp3", "sil700.mp3"].every((f) => fs.existsSync(jgl(f)))) {
       const seq = [jgl("intro.mp3"), jgl("sil400.mp3")];
@@ -854,15 +857,23 @@ export async function buildExport(db: DB, asset: Asset, variant: string | null):
       } else if (asset.format === "video") {
         const c = asset.content as VideoContent;
         const mm = Math.round((c.durationSec || 0) / 60), ss = (c.durationSec || 0) % 60;
-        paras.push(new Paragraph({ text: "Kịch bản video hoạt hình", heading: HeadingLevel.HEADING_1 }));
+        const roleLabel: Record<string, string> = { veo: "QUAY · VEO", avatar: "AVATAR · DƯƠNG", graphics: "ĐỒ HOẠ" };
+        // đẩy một khối văn bản nhiều dòng (mỗi \n = 1 đoạn); mono=true dùng cho prompt Veo/bible tiếng Anh.
+        const pushBlock = (txt: string, mono = false) => String(txt || "").split("\n").forEach((line) =>
+          paras.push(new Paragraph({ children: [new TextRun({ text: line, font: mono ? "Consolas" : undefined, size: mono ? 18 : undefined })] })));
+        paras.push(new Paragraph({ text: "Kịch bản video — bộ dựng đầy đủ", heading: HeadingLevel.HEADING_1 }));
+        if (c.videoTitle) paras.push(new Paragraph({ children: [new TextRun({ text: "Tên video: ", bold: true }), new TextRun({ text: rm(c.videoTitle), bold: true })] }));
         if (c.logline) paras.push(new Paragraph({ children: [new TextRun({ text: "Tình huống: ", bold: true }), new TextRun({ text: rm(c.logline), italics: true })] }));
-        paras.push(new Paragraph({ children: [new TextRun({ text: `Thời lượng ~${c.durationSec ? `${mm}:${String(ss).padStart(2, "0")}` : "≤5"} phút · ${c.style || "Hoạt hình 2D"}`, size: 20 })] }));
+        paras.push(new Paragraph({ children: [new TextRun({ text: `Thời lượng ~${c.durationSec ? `${mm}:${String(ss).padStart(2, "0")}` : "≤3"} phút · ${c.style || "Hoạt hình 2D + quay thực"}`, size: 20 })] }));
         if (c.characters?.length) paras.push(new Paragraph({ children: [new TextRun({ text: "Nhân vật: ", bold: true }), new TextRun(rm(c.characters.map((ch) => `${ch.name}${ch.role ? ` (${ch.role})` : ""}`).join(" · ")))] }));
         paras.push(new Paragraph({ text: "" }));
+        // ── PHẦN A — kịch bản 7 nhịp (theo atom) ──
+        paras.push(new Paragraph({ text: "PHẦN A — Kịch bản 7 nhịp", heading: HeadingLevel.HEADING_1 }));
         c.scenes.forEach((s, i) => {
           const beat = s.beat ? ` — ${s.beat.toUpperCase()}` : "";
+          const role = s.role ? `  [${roleLabel[s.role] || s.role}]` : "";
           const dur = s.durationSec ? ` (${s.durationSec}s)` : "";
-          paras.push(new Paragraph({ text: `Cảnh ${i + 1}${beat}${dur}`, heading: HeadingLevel.HEADING_2 }));
+          paras.push(new Paragraph({ text: `Cảnh ${i + 1}${beat}${role}${dur}`, heading: HeadingLevel.HEADING_2 }));
           if (s.setting) paras.push(new Paragraph({ children: [new TextRun({ text: "Bối cảnh: ", bold: true }), new TextRun({ text: rm(s.setting), italics: true })] }));
           paras.push(new Paragraph({ children: [new TextRun({ text: "Hình ảnh: ", bold: true }), new TextRun(rm(s.visual))] }));
           // Thoại mới (dialogue[]); rơi về narration cho asset cũ.
@@ -874,10 +885,32 @@ export async function buildExport(db: DB, asset: Asset, variant: string | null):
           } else if (s.narration) {
             paras.push(new Paragraph({ children: [new TextRun({ text: "Lời thoại: ", bold: true }), new TextRun(rm(s.narration))] }));
           }
+          if (s.onScreenText) paras.push(new Paragraph({ children: [new TextRun({ text: "Chữ trên màn: ", bold: true }), new TextRun({ text: `“${rm(s.onScreenText)}”`, italics: true })] }));
           if (s.animation) paras.push(new Paragraph({ children: [new TextRun({ text: "Animation: ", bold: true }), new TextRun(rm(s.animation))] }));
+          if (s.role === "veo" && s.veoAction) {
+            paras.push(new Paragraph({ children: [new TextRun({ text: `Prompt Veo (tiếng Anh)${s.veoCast?.length ? ` · ${s.veoCast.join(", ")}` : ""}:`, bold: true })] }));
+            pushBlock(assembleVeoPrompt(s.veoAction, s.veoCast), true);
+          }
           if (s.mucTieu) paras.push(new Paragraph({ children: [new TextRun({ text: "Mục tiêu sư phạm: ", bold: true }), new TextRun({ text: rm(s.mucTieu), italics: true })] }));
           paras.push(new Paragraph({ text: "" }));
         });
+        // ── PHẦN B — bộ dựng cố định (dùng chung mọi video) ──
+        paras.push(new Paragraph({ text: "PHẦN B — Bộ dựng cố định", heading: HeadingLevel.HEADING_1 }));
+        paras.push(new Paragraph({ text: "Cơ chế video tự ngưng (P1 / P2)", heading: HeadingLevel.HEADING_2 }));
+        pushBlock(PAUSE_MECHANISM_VI);
+        paras.push(new Paragraph({ text: "" }));
+        paras.push(new Paragraph({ text: "Style & Character Bible (dán vào mọi prompt Veo)", heading: HeadingLevel.HEADING_2 }));
+        paras.push(new Paragraph({ children: [new TextRun({ text: "[STYLE]", bold: true })] }));
+        pushBlock(STYLE_BLOCK, true);
+        paras.push(new Paragraph({ children: [new TextRun({ text: "[SCHOOL — bối cảnh sân trường]", bold: true })] }));
+        pushBlock(SCHOOL_SETTING, true);
+        for (const k of ["TIM", "AN", "LEO"]) { paras.push(new Paragraph({ children: [new TextRun({ text: `[${k}]`, bold: true })] })); pushBlock(CHAR_BIBLE[k], true); }
+        paras.push(new Paragraph({ text: "" }));
+        paras.push(new Paragraph({ text: "Hướng dẫn kỹ thuật Veo & dựng", heading: HeadingLevel.HEADING_2 }));
+        pushBlock(VEO_TECH_GUIDE_VI);
+        paras.push(new Paragraph({ text: "" }));
+        paras.push(new Paragraph({ text: "Checklist trước khi phát hành", heading: HeadingLevel.HEADING_2 }));
+        pushBlock(RELEASE_CHECKLIST_VI);
       } else {
         const c = asset.content as SectionContent;
         for (const s of c.sections) {

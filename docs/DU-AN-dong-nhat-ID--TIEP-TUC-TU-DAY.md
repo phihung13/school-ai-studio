@@ -28,25 +28,26 @@ Hệ sinh thái **Trường Việt Anh**:
 ## 2. TRẠNG THÁI (đang ở đâu)
 - ✅ **P1 — id_map ĐÓNG BĂNG**: `data/migration/id_map.frozen.json`. Quy mô: **12.910 KC · 9.626 Q- · 8.911 E- · 61 R- · 2.630 L-**. KC ngẫu nhiên → **KHÔNG chạy lại builder** (ra KC khác, hỏng ánh xạ). Đã audit sạch, xác nhận dựng từ đúng data sống.
 - ✅ **P2 — Studio ĐÃ CUTOVER LIVE** (23/07): `studio.db` = bản migrated, `npm run build` + `next start -p 3200`, nghiệm thu OK (graph 12.907 nt/8.910 lk, atom `/atom/KC-3566611` resolve KC, các route 200).
-- ⏳ **P3 — Tutor CHỜ**: đổi DB tutor + remap dữ liệu học sinh. **Blocker = đội tutor** (phải deploy code P4 + chốt cửa sổ bảo trì), KHÔNG phải chờ Hùng duyệt.
+- ✅ **Tutor đã ĐỒNG Ý re-key** (đối ứng vòng 1, 23/07) — audit code xác nhận engine agnostic theo khoá, chỉ có `learning-path.tiebreak` phụ thuộc tính-thứ-tự của `node_key` (đã sửa ~10 dòng, CHƯA deploy). Phát hiện quan trọng: **`kg_nodes` tutor hiện CHỈ có 2 môn sống** — Toán (417 node) + Anh (341 node) = 758 node, KHÔNG phải cả 12 môn — phạm vi P3 thực tế nhỏ hơn nhiều so với 12.907.
+- ✅ **`kc_registry` đã bổ sung đủ cho 758 node đang sống** (23/07): thêm 554 dòng (Tiếng Anh 10 + Toán 9 còn thiếu + 3 seed tutor-only), dọn 3 dòng rác → tổng 3.417 dòng.
+- ✅ **P4 tutor đã deploy sớm** (`learning-path` v10, tiebreak theo `kc_registry.vi_tri_trong_ct`, fallback `node_key` an toàn khi chưa remap — đã đọc thẳng source code xác nhận đúng thiết kế) — deploy trước P3 không đổi hành vi (nhánh fallback), tự kích hoạt logic mới ngay khi P3 chạy xong.
+- ✅ **P3 ĐÃ CHẠY XONG VÀ VERIFY SẠCH (23/07, Hùng duyệt "không cần cửa sổ bảo trì, chạy luôn").** Remap phạm vi Toán+Anh (758 node sống): `kg_nodes.node_key`, `kg_edges.from_key/to_key`, `questions.node_key`+`question_key` (2.967 câu), `resources.node_key`, `socratic_ladders.node_key`, + 5 cột học sinh (`attempts/mastery_evidence/learning_sessions/student_node_state/xp_events`) — toàn bộ qua UPDATE...FROM kc_registry (JOIN theo code cũ, không cần data literal, gọn) + 5 batch VALUES cho question_key (kiểm chứng trước: 2967/2967 khớp tuyệt đối với id_map, 0 lệch). **Verify sau chạy:** số dòng mọi bảng trước=sau khớp 100% (kg_nodes 758, kg_edges 586, questions 2967, attempts 60, mastery_evidence 50, learning_sessions 33, student_node_state 9, xp_events 6, session_turns 129 — không mất dòng nào); quét regex 12 cột liên quan = **0 key định dạng cũ còn sót**; sample end-to-end (`TO10-C01-A01`→`KC-3566611`, 7 câu hỏi + 6 cạnh resolve đúng) và dữ liệu mastery_score học sinh thật vẫn nguyên, join đúng qua node_key mới.
+- 🎉 **P3/P4 — TUTOR NGHIỆM THU ĐẠT (23/07).** Tutor verify độc lập trên DB prod + gọi `learning-path` thật: 544 node active + 2.967 câu toàn KC-/Q- (0 key cũ ở 9 cột khoá), 0 mất dòng, attempts/mastery 0 mồ côi (tiến độ HS nguyên), 204+340 node có `vi_tri_trong_ct`, **thứ tự lộ trình đúng** (Anh khớp 100%; Toán đúng — A07 nổi trước A06 là "mở khoá thông minh" available/locked, không phải xáo do key). Studio tự xác minh lại 24/07: 0 node_bad/q_bad/mồ côi — khớp. **CẢ 2 BÊN KÝ. Dự án đồng nhất ID = P1–P4 XONG TRỌN.**
+- ⏳ **CÒN NỢ (Studio giao theo ID mới — KHÔNG thuộc migration nữa, additive, không cần cửa sổ):** bundle **GDKTPL 10** (210 câu), **rubric ~340** câu tự luận (3 khuôn kỹ năng Viết/Nói/Lập luận, jsonb thang_muc 0–3), câu **`nghe`** + transcript, và **socratic_ladders/rubric Tiếng Anh** (đang gần trống — tutor báo 0, thực 1 dòng seed).
 
 ---
 
 ## 3. BƯỚC TIẾP THEO (làm gì tiếp)
-**3a. Hùng đưa tutor file** `docs/TUTOR-P3P4-cua-so-bao-tri.md`, lấy về 3 câu trả lời:
-1. `question_key` của tutor có dùng ở đường phục vụ/chấm bài, hay chỉ import?
-2. Còn cột/logic ẩn nào (trong edge function tutor) trỏ node/câu bằng mã vị trí?
-3. Lịch **cửa sổ bảo trì** + xác nhận code P4 sẵn deploy trong cửa sổ.
+**3a. Chờ tutor trả lời `docs/DOI-UNG-TUTOR-P3P4-vong2.md`** (gửi 23/07): chốt ngày giờ cụ thể cửa sổ bảo trì (đề xuất ngoài giờ học, khoá login 30–60'; vì phạm vi thực tế chỉ 758 node nên cửa sổ có thể ngắn hơn dự tính ban đầu).
 
-**3b. Sau khi tutor trả lời → Studio (Claude) làm:**
-- Dựng **script remap tutor** (dùng `id_map.frozen.json` + service key REST hoặc Supabase MCP execute_sql, CHỈ project `gxbxsdhvtwtjkfygetzb`). Bề mặt remap (17 cột text, đã soi schema thật):
+**3b. Sau khi có lịch → Studio (Claude) làm:**
+- Dựng **script remap tutor CHÍNH THỨC** (dùng `id_map.frozen.json`, CHỈ project `gxbxsdhvtwtjkfygetzb`, phạm vi thực tế = node/câu/cạnh thuộc 2 môn Toán+Anh đang sống, không phải toàn bộ 12.907). Bề mặt remap (đã soi schema thật):
   - **node_key→KC**: `kg_nodes.node_key`, `kg_edges.from_key/to_key`, `kg_tiers.node_key`, `questions.node_key`, `resources.node_key`, `socratic_ladders.node_key`, + học sinh: `attempts.node_id`, `mastery_evidence.node_id`, `learning_sessions.current_node_id`, `student_node_state.node_id`, `xp_events.node_id`.
-  - **question_key→Q-**: CHỈ `questions.question_key`.
+  - **question_key→Q-**: CHỈ `questions.question_key` (xác nhận an toàn tuyệt đối — không dùng ở serving, chỉ import + `teacher-stats.order` cosmetic).
   - **id riêng→E-/R-/L-**: `kg_edges`/`resources`/`socratic_ladders` (nếu cột id là text).
-  - **`kc_registry` dựng lại đủ 12.907**: `node_key`=KC, `vi_tri_trong_ct`=**rank đệm-0** (thứ tự bài toàn cục — để tutor tiebreak lộ trình).
   - 🎯 **Dữ liệu học sinh AN TOÀN**: `attempts/mastery/submissions.question_id` = **UUID `questions.id`** (bất biến) → KHÔNG remap. Anti-join mọi cột node = **0 mồ côi** → remap sạch.
-- Chạy trong **1 transaction**, đối chiếu số dòng trước=sau, rollback sẵn. Đồng bộ P3(đổi DB)↔P4(tutor deploy code) trong CÙNG cửa sổ.
-- Đẩy `id_map` lên Supabase dùng chung (`public.id_map`) nếu cần lưu bền.
+- Chạy trong **1 transaction**, đối chiếu số dòng trước=sau, rollback sẵn. Đồng bộ P3(đổi DB)↔P4(tutor deploy `learning-path` mới) trong CÙNG cửa sổ.
+- Khi tutor mở thêm môn mới → bổ sung `kc_registry` cho môn đó trước (cùng cách đã làm, additive, không cần cửa sổ riêng).
 
 **3c. Studio còn nợ tutor (giao theo ID mới, sau re-key):** bundle **GDKTPL 10** (210 câu), **rubric từng câu tự luận** (~340), câu **`nghe`** kèm transcript.
 

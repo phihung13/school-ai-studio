@@ -1,0 +1,23 @@
+# docker-compose cho VPS — kéo image đã build sẵn trên GitHub (GHCR) rồi chạy.
+#   • DB nằm ở ./data trên VPS (bind mount) → an toàn qua mọi lần update image.
+#   • Đổi STUDIO_IMAGE trong .env cho khớp repo của bạn (ghcr.io/<owner>/<repo>:latest).
+services:
+  studio:
+    image: ${STUDIO_IMAGE:-ghcr.io/OWNER/REPO:latest}
+    container_name: va-studio
+    restart: unless-stopped
+    ports:
+      - "${STUDIO_PORT:-3000}:3000"
+    env_file:
+      - .env
+    volumes:
+      # DB thật + dữ liệu runtime nằm ở đây; scp studio.db vào ./data trước khi chạy lần đầu
+      - ./data:/app/data
+    # chromium cần thêm shared memory để render slide/PDF không crash
+    shm_size: "1gb"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok||r.status===307?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s

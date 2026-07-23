@@ -6,6 +6,7 @@ import Shell, { Breadcrumb } from "@/components/shell";
 import MdMindmap from "@/components/md-mindmap";
 import { getData, api, Card, PageLoading, LoadError, Button, AssetBadge, Spinner, useToast, cls, FormatIcon, M } from "@/components/ui";
 import { TreeNode, Pkg, Asset, User, FORMAT_LABEL, LEVEL_LABEL, STATUS_LABEL, niceTicks, SLIDE_TEMPLATES } from "@/lib/shared";
+import { assembleVeoPrompt } from "@/lib/video-kit";
 
 interface AssetData { asset: Asset; pkg: Pkg; atom: TreeNode; ancestors: TreeNode[] }
 
@@ -282,26 +283,35 @@ function PodcastView({ assetId, content }: { assetId: string; content: { script:
   );
 }
 
-interface VideoScene { beat?: string; setting?: string; visual: string; dialogue?: { speaker: string; line: string; action?: string }[]; animation?: string; mucTieu?: string; narration?: string; durationSec?: number }
-function VideoView({ content }: { content: { logline?: string; characters?: { name: string; role?: string }[]; scenes: VideoScene[]; durationSec?: number; style?: string } }) {
+interface VideoScene { beat?: string; role?: "veo" | "avatar" | "graphics"; setting?: string; visual: string; dialogue?: { speaker: string; line: string; action?: string }[]; onScreenText?: string; animation?: string; veoAction?: string; veoCast?: string[]; mucTieu?: string; narration?: string; durationSec?: number }
+const ROLE_TAG: Record<string, { label: string; cls: string }> = {
+  veo: { label: "QUAY · VEO", cls: "bg-brand/10 text-brand" },
+  avatar: { label: "AVATAR · DƯƠNG", cls: "bg-brass/15 text-brass-ink" },
+  graphics: { label: "ĐỒ HOẠ", cls: "bg-info-bg text-info" },
+};
+function VideoView({ content }: { content: { videoTitle?: string; logline?: string; characters?: { name: string; role?: string }[]; scenes: VideoScene[]; durationSec?: number; style?: string } }) {
   const total = content.durationSec || content.scenes.reduce((a, s) => a + (s.durationSec || 0), 0);
   const mm = Math.floor(total / 60), ss = total % 60;
   return (
     <div>
       <p className="mb-3 flex items-start gap-2 rounded-md bg-info-bg px-3 py-2 text-xs text-info">
         <Clapperboard size={14} className="mt-0.5 shrink-0" />
-        Kịch bản video hoạt hình (~{total ? `${mm}:${String(ss).padStart(2, "0")}` : "≤5:00"} phút · {content.style || "hoạt hình 2D"}). Khâu render video là giai đoạn sau — kịch bản này là đầu vào chuẩn cho đối tác/công cụ hoạt hình. Tải bản <b>DOCX</b> để dùng ngay.
+        Kịch bản video 7 nhịp (~{total ? `${mm}:${String(ss).padStart(2, "0")}` : "≤3:00"} phút · {content.style || "hoạt hình 2D + quay thực"}). Mỗi cảnh ghi rõ <b>kênh dựng</b> (Veo / avatar Dương / đồ hoạ) kèm prompt Veo tiếng Anh. Tải <b>DOCX</b> để có trọn bộ pack (cơ chế tự ngưng, style &amp; character bible, hướng dẫn kỹ thuật, checklist).
       </p>
+      {content.videoTitle && <p className="mb-1 text-base font-semibold text-brand-deep"><M>{content.videoTitle}</M></p>}
       {content.logline && <p className="mb-1 text-sm text-ink-2"><b className="text-ink">Tình huống:</b> <i><M>{content.logline}</M></i></p>}
       {!!content.characters?.length && (
         <p className="mb-3 text-xs text-muted"><b className="text-ink-2">Nhân vật:</b> {content.characters.map((c, i) => <span key={i}>{i > 0 && " · "}<M>{c.name}</M>{c.role ? ` (${c.role})` : ""}</span>)}</p>
       )}
       <div className="space-y-3">
-        {content.scenes.map((s, i) => (
+        {content.scenes.map((s, i) => {
+          const tag = s.role ? ROLE_TAG[s.role] : undefined;
+          return (
           <Card key={i} className="overflow-hidden">
             <div className="flex items-center gap-3 border-b border-line bg-surface-2/60 px-4 py-2">
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brass/15 text-brass-ink"><Film size={15} strokeWidth={1.75} /></span>
               <p className="text-xs font-semibold text-brand">CẢNH {i + 1}{s.beat ? <span className="ml-1.5 font-medium uppercase tracking-wide text-brass-ink">· {s.beat}</span> : null}</p>
+              {tag && <span className={cls("rounded-full px-2 py-0.5 text-[10px] font-semibold", tag.cls)}>{tag.label}</span>}
               {s.durationSec ? <span className="ml-auto text-[11px] text-muted">{s.durationSec}s</span> : null}
             </div>
             <div className="p-4">
@@ -316,11 +326,19 @@ function VideoView({ content }: { content: { logline?: string; characters?: { na
               ) : s.narration ? (
                 <p className="mt-2 text-sm text-ink-2"><b>Lời thoại:</b> “<M>{s.narration}</M>”</p>
               ) : null}
+              {s.onScreenText && <p className="mt-2 text-xs text-ink-2"><b className="text-ink-2">Chữ trên màn:</b> “<M>{s.onScreenText}</M>”</p>}
               {s.animation && <p className="mt-2 text-xs text-muted"><b className="text-ink-2">Animation:</b> <M>{s.animation}</M></p>}
-              {s.mucTieu && <p className="mt-1 text-[11px] italic text-brass-ink"><b className="not-italic">Mục tiêu:</b> <M>{s.mucTieu}</M></p>}
+              {s.role === "veo" && s.veoAction && (
+                <div className="mt-2.5">
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-brand">Prompt Veo (tiếng Anh){s.veoCast?.length ? ` · ${s.veoCast.join(", ")}` : ""}</p>
+                  <pre className="overflow-x-auto whitespace-pre-wrap rounded-md border border-line bg-surface-2/60 p-2 text-[11px] leading-relaxed text-ink-2">{assembleVeoPrompt(s.veoAction, s.veoCast)}</pre>
+                </div>
+              )}
+              {s.mucTieu && <p className="mt-2 text-[11px] italic text-brass-ink"><b className="not-italic">Mục tiêu:</b> <M>{s.mucTieu}</M></p>}
             </div>
           </Card>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

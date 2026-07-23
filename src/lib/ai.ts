@@ -2,6 +2,7 @@ import { AiReport, AssetFormat, DB, Pkg, PkgFields, TreeNode, ancestors, node } 
 import { z, type ZodType } from "zod";
 import { QuizContentSchema, type QuizContent } from "./schemas/quiz";
 import { SlideContentSchema, DeckDecorSchema, SlideChartSchema, type SlideContentV2, type SlideChart } from "./schemas/slide";
+import { CAST_DIRECTIVE_VI } from "./video-kit";
 
 // ── Nguyên liệu tri thức THẬT lấy thẳng từ DB (không bịa): yêu cầu cần đạt của atom,
 //    tiền đề (prerequisite_hard) và quan niệm sai (edges) — đây là thứ làm nội dung "có ruột". ──
@@ -17,6 +18,15 @@ function atomKnowledge(db: DB, atom: TreeNode) {
     .filter((e) => e.quanNiemSai)
     .map((e) => ({ text: e.quanNiemSai!.trim(), hint: (e.remediationHint || "").trim() }));
   return { prereqs, misconceptions };
+}
+
+// Node KẾ TIẾP trên đồ thị (dựng cliffhanger cho video): atom mà nguyên tử HIỆN TẠI là tiền đề CỨNG cho nó
+// (from = atom này, relation = prerequisite_hard) — đó là "bài học sau" tự nhiên; fallback sang liên quan mềm.
+function nextAtoms(db: DB, atom: TreeNode): string[] {
+  const out = db.edges.filter((e) => e.from === atom.id);
+  const titlesOf = (rel: string) => out.filter((e) => e.relation === rel).map((e) => node(db, e.to)?.title).filter((t): t is string => !!t);
+  const hard = titlesOf("prerequisite_hard");
+  return (hard.length ? hard : titlesOf("related_soft")).slice(0, 3);
 }
 
 // ============================================================
@@ -336,27 +346,43 @@ LUẬT VĂN NÓI (BẮT BUỘC — đây là audio người thật nghe, không 
 - Mở đầu bằng TÌNH HUỐNG ĐỜI THẬT (chia bánh, đi chợ, điểm thi, đá bóng…) làm Bin thắc mắc — KHÔNG mở bằng "hôm nay cô trò mình học…".
 - Bin phải ĐOÁN SAI ít nhất 1 lần (bám quan niệm sai thật nếu có) rồi tự "à ra vậy!" (mood "ngạc nhiên") — khoảnh khắc vỡ òa là linh hồn của tập.
 - Kết: Bin đố lại NGƯỜI NGHE một câu nhỏ + lời chào ấm, hẹn tập sau.`,
-        video: `{"logline":"1 câu: tình huống đời thường dẫn tới câu hỏi của học sinh","characters":[{"name":"Cô Hương","role":"giáo viên"},{"name":"Nam","role":"học sinh"}],"scenes":[{"beat":"câu hỏi|gợi mở|minh hoạ|kết luận|câu hỏi kiểm tra","setting":"bối cảnh ngắn","visual":"hình trực quan CỤ THỂ (hộp/nhóm/đoạn thẳng/hình tròn/bảng/vật thật)","dialogue":[{"speaker":"tên","line":"lời thoại"}],"animation":"chuyển động chính trong cảnh","mucTieu":"mục tiêu sư phạm của cảnh","durationSec":50}],"durationSec":260,"style":"Hoạt hình 2D, màu tươi sáng"}
+        video: `{"videoTitle":"tên video hấp dẫn hiển thị cho học sinh (vd 'Đo cột cờ mà không cần trèo')","logline":"1 câu: tình huống đời thường KÉO người xem vào câu hỏi của bài","characters":[{"name":"Dương","role":"người dẫn"},{"name":"Tim","role":"học sinh"},{"name":"An","role":"học sinh"},{"name":"Leo","role":"linh vật"}],"scenes":[{"beat":"mở màn|khơi động lực|dự đoán|giảng cốt lõi|checkpoint|ngoài đời|củng cố","role":"veo|avatar|graphics","setting":"bối cảnh ngắn","visual":"hình trực quan CỤ THỂ cho hoạ sĩ dựng","dialogue":[{"speaker":"tên","line":"lời thoại NGẮN, đọc ký hiệu thành lời"}],"onScreenText":"chữ gắn hậu kỳ trên màn (TEXT overlay) nếu có","animation":"chuyển động chính (kèm khoảnh khắc ngưng/đếm ngược nếu có)","veoAction":"CHỈ khi role=veo: mô tả cảnh quay TIẾNG ANH ~8s, không thoại, không chữ; KHÔNG chép style/nhân vật (hệ thống tự ghép)","veoCast":["TIM"],"mucTieu":"mục tiêu sư phạm của cảnh","durationSec":26}],"durationSec":185,"style":"Hoạt hình 2D + quay thực, màu tươi sáng"}
 
 # VAI TRÒ: BẠN LÀ BIÊN KỊCH VIDEO GIÁO DỤC — KHÔNG PHẢI GIÁO VIÊN.
 Bạn KHÔNG tự suy diễn/định nghĩa lại kiến thức, KHÔNG viết theo trí nhớ. Bạn CHỈ chuyển hoá KNOWLEDGE CONTRACT (ở phần đầu tin nhắn) thành kịch bản dễ hiểu. Đầu vào thiếu/mơ hồ → GIỮ NGUYÊN, không tự bổ sung.
-# CẤU TRÚC BẮT BUỘC — đúng 5 cảnh, đúng thứ tự (điền "beat" đúng tên cảnh):
-1. CÂU HỎI: nhân vật chưa hiểu đặt ĐÚNG MỘT câu hỏi về "${atom.title}".
-2. GỢI MỞ: nhân vật kia dùng ĐÚNG ví dụ đời thường (ưu tiên allowed_examples; được bắc cầu từ kien_thuc_tien_de) để giải thích — ví dụ phải KHỚP bản chất, KHÔNG ví dụ quá xa. Nếu Contract có common_misconceptions, cho nhân vật chưa hiểu mắc đúng lỗi đó rồi được chỉnh.
-3. MINH HOẠ: hình trực quan (hộp/nhóm/đoạn thẳng/hình tròn/bảng/vật thật). KHÔNG hiệu ứng fantasy, KHÔNG nhân hoá.
-4. KẾT LUẬN: nhắc lại ĐÚNG canonical_definition bằng lời dễ hiểu. KHÔNG mở rộng, KHÔNG thêm kiến thức.
-5. CÂU HỎI KIỂM TRA: đúng 1 câu hỏi ngắn cho người xem. KHÔNG giải đáp.
-# NHÂN VẬT: tối đa 2 (giáo viên + học sinh, HOẶC 2 học sinh — một biết, một chưa). KHÔNG thêm nhân vật thứ ba.
+# THỜI LƯỢNG: video NGẮN ~3 PHÚT — TỔNG durationSec 170–200 (TUYỆT ĐỐI ≤ 210). Đây là MỘT nguyên tử kiến thức: đi thẳng vào trọng tâm, KHÔNG lan man, KHÔNG nhồi ý ngoài Contract. Một ví dụ ĐẮT hơn ba ví dụ thường — thà cảnh ngắn còn hơn dài dòng.
+# CẤU TRÚC BẮT BUỘC — ĐÚNG 7 NHỊP, đúng thứ tự (điền "beat" đúng tên nhịp); thời lượng gợi ý trong ngoặc:
+1. mở màn — HOOK · role="veo" (~22s): TÌNH HUỐNG ĐỜI THẬT (sân trường/đời sống) — **Tim và An** cãi nhau / cá cược (một người tuyên bố SAI đầy tự tin), **Leo** pha trò → bật ra ĐÚNG MỘT câu hỏi về "${atom.title}". 12 giây đầu phải "dính mắt": vào thẳng tình huống, KHÔNG chào hỏi, KHÔNG "hôm nay chúng ta học…". Kết nhịp bằng câu hỏi lớn hiện giữa màn hình (điền "onScreenText"). veoCast = các nhân vật có mặt.
+2. khơi động lực · role="avatar" (~20s): **Dương** (người dẫn) khơi VÌ SAO đáng học — nối câu hỏi với một nghề/việc thật (thợ, kỹ sư, người bán hàng…) + hứa "vài phút nữa con sẽ làm được". Chỉ TẠO ĐỘNG LỰC, CHƯA giảng. (Không cần veoAction.)
+3. dự đoán — NGƯNG P1 · role="graphics" (~18s): thẻ câu hỏi dự đoán (đồ hoạ); nếu Contract có common_misconceptions thì gài đúng lỗi đó vào một phương án. "animation" = đóng băng + thẻ câu hỏi + đếm ngược 5 giây + dòng nhắc "Con có thể bấm dừng nếu cần thêm thời gian", rồi HÉ NHANH hướng đúng. Giọng dẫn: Dương.
+4. giảng cốt lõi · role="graphics" (~55s — nhịp DÀI NHẤT): đồ hoạ/hình trực quan (Veo KHÔNG vẽ được ký hiệu toán); **Dương** giảng qua ĐÚNG ví dụ đời thường (ưu tiên allowed_examples; bắc cầu kien_thuc_tien_de), từng phần tử SÁNG LÊN đúng lúc gọi tên (signaling), **Leo** chen 1 câu tếu. Chỉnh quan niệm sai đã đoán ở nhịp 3. Chốt canonical_definition 1 câu dễ nhớ. KHÔNG fantasy, KHÔNG nhân hoá, KHÔNG mở rộng ngoài Contract.
+5. checkpoint — NGƯNG P2 · role="graphics" (~30s): thẻ câu hỏi vận dụng (đồ hoạ). "animation" = đóng băng + nhạc TẮT HẲN + đếm ngược 7 giây. SAU đó **Dương** giải đáp: vì sao đáp đúng + vì sao TỪNG phương án nhiễu sai (bám common_misconceptions).
+6. ngoài đời · role="veo" (~22s): 2–3 cảnh QUAY THẬT nơi kiến thức dùng ngoài đời (mỗi cảnh 1 câu) + giao MỘT nhiệm vụ nhỏ về nhà gắn với "${atom.title}". Các cảnh này thường KHÔNG có nhân vật cố định → veoCast=[] và tả người/vật trong "veoAction". KHÔNG thêm kiến thức mới.
+7. củng cố + CLIFFHANGER · role="veo" (~18s): **Dương** mời đọc to lại 1 câu chốt (brain-dump — ghi trong "animation"); rồi CLIFFHANGER là một cảnh QUAY gợi tò mò về NODE KẾ TIẾP (xem mục "NODE KẾ TIẾP" cuối tin nhắn) — CHỈ hé câu hỏi/tình huống, TUYỆT ĐỐI KHÔNG giảng nội dung node đó. Không có node kế → lời hẹn nhẹ, KHÔNG bịa tên chủ đề.
+# LÀM CHO KỊCH BẢN SỐNG ĐỘNG (đây là chỗ khác nhau giữa kịch bản HAY và kịch bản KHÔ — bám sát):
+- HOOK có KỊCH TÍNH, KHÔNG "bâng quơ thắc mắc": cho nhân vật CÁ CƯỢC / tuyên bố SAI đầy tự tin / gặp tình huống BẤT NGỜ tạo ra "cái để tranh cãi" rồi mới bật ra câu hỏi. (Kiểu: hai bạn cãi nhau cột cờ cao 15m hay 10m → lát sau lộ ra cả hai đều sai.)
+- THOẠI CÓ TÍNH CÁCH như người thật nói: câu ngắn, có cảm thán tự nhiên ("Ơ?", "Thế á?", "Trời!", "À… ra vậy!"), có chút hài; nhân vật chưa hiểu phải ĐOÁN SAI (bám common_misconceptions) rồi mới vỡ ra. TRÁNH thoại liệt kê khô như đọc SGK ("A là…, B là…, C là…").
+- GIẢNG bằng VÍ DỤ CỤ THỂ: nếu Contract có ví dụ/con số/tình huống thật → DẪN QUA TỪNG BƯỚC bằng chính con số/ví dụ đó, tính ra kết quả cụ thể (đọc ký hiệu thành lời) — KHÔNG chỉ phát biểu định nghĩa suông. Contract KHÔNG có số → kể bằng hình ảnh/so sánh đời thường thật đắt, vẫn cụ thể.
+- CHECKPOINT phải BÁC TỪNG PHƯƠNG ÁN SAI: khi giải đáp nói RÕ vì sao đáp đúng VÀ vì sao mỗi nhiễu sai (bám common_misconceptions) — đừng chỉ công bố đáp án.
+- "visual"/"animation" tả CÓ HÌNH cho hoạ sĩ storyboard: góc máy, vật cận cảnh, phần tử nào SÁNG/MỜ lúc nào (kiểu "cận cảnh viên gạch đỏ", "camera lia…", "gạch chéo mờ cột trái khi chốt") — không tả chung chung.
+# TRẦN KIẾN THỨC (BẮT BUỘC): mọi sự phong phú CHỈ ở CÁCH KỂ (kịch tính, thoại, hình ảnh, nhịp). TUYỆT ĐỐI KHÔNG thêm kiến thức/ví dụ/con số NGOÀI Knowledge Contract. Contract nghèo → kể DUYÊN hơn, KHÔNG bịa cho "giàu".
+${CAST_DIRECTIVE_VI}
 # RÀNG BUỘC:
-- KHÔNG nhân hoá ký hiệu/công thức (xem luật "CẤM NHÂN HOÁ" ở phần system). Ký hiệu hiện trên màn giữ NGUYÊN chuẩn, đúng vị trí; trong lời thoại phải ĐỌC THÀNH LỜI ("p/q"→"p trên q", "∈"→"thuộc", "≠ 0"→"khác không").
-- ĐƯỢC đổi: bối cảnh, đồ vật, tên nhân vật, cách nói — MIỄN không đổi bản chất kiến thức. KHÔNG được đổi/bịa phép toán, ký hiệu, con số.
-- "visual" tả hình cho hoạ sĩ dựng; "animation" tả chuyển động; KHÔNG chép lại lời thoại. Nhân vật giữ NGUYÊN tên/vai; tên thuần Việt.
-- TỔNG durationSec ≤ 300 (≤ 5 phút).
-# TỰ KIỂM trước khi xuất — nếu BẤT KỲ câu nào "CÓ" thì viết lại: □ Sai/diễn giải lệch toán? □ Thêm kiến thức ngoài Contract? □ Ví dụ gây hiểu sai? □ Nhân hoá công thức? □ Học sinh lớp mục tiêu KHÓ hiểu ngay?`,
+- KHÔNG nhân hoá ký hiệu/công thức (xem luật "CẤM NHÂN HOÁ" ở phần system). Ký hiệu hiện trên màn giữ NGUYÊN chuẩn, đúng vị trí; trong lời thoại phải ĐỌC THÀNH LỜI ("p/q"→"p trên q", "∈"→"thuộc", "≠ 0"→"khác không", "="→"bằng").
+- ĐƯỢC đổi: bối cảnh, đồ vật, cách nói — MIỄN không đổi bản chất kiến thức. KHÔNG đổi tên/vai 4 nhân vật cố định. KHÔNG được đổi/bịa phép toán, ký hiệu, con số.
+- "visual" tả hình cho hoạ sĩ dựng; "animation" tả chuyển động + khoảnh khắc ngưng; KHÔNG chép lại lời thoại vào visual/animation/veoAction.
+- Câu thoại NGẮN (nói được trong một hơi), không đọc như văn viết.
+- TỔNG durationSec ≤ 210 (mục tiêu ~3 phút).
+# TỰ KIỂM trước khi xuất — nếu BẤT KỲ câu nào "CÓ" thì viết lại: □ Không đủ 7 nhịp / sai thứ tự? □ Thiếu "role" ở cảnh nào? □ role="veo" mà thiếu "veoAction"/"veoCast"? □ veoAction chép lại thoại tiếng Việt (thay vì tả cảnh quay tiếng Anh)? □ Tổng durationSec > 210? □ Hook chỉ "bâng quơ thắc mắc", thiếu kịch tính (cá cược/tuyên bố sai/bất ngờ)? □ Thoại KHÔ như đọc SGK ("A là…, B là…")? □ Cliffhanger LỠ giảng nội dung node kế? □ Sai/diễn giải lệch toán? □ Thêm kiến thức ngoài Contract? □ Nhân hoá công thức? □ Học sinh lớp mục tiêu KHÓ hiểu ngay?`,
       };
       // Video = khoá nội dung bằng Knowledge Contract (chống ảo giác); các định dạng khác giữ prompt chung.
+      // Bơm NODE KẾ TIẾP (từ đồ thị) để nhịp 7 dựng cliffhanger trỏ đúng bài sau, KHÔNG bịa chủ đề.
+      const nexts = format === "video" ? nextAtoms(db, atom) : [];
+      const cliffCtx = nexts.length
+        ? `\n\nNODE KẾ TIẾP (chỉ để dựng cliffhanger ở nhịp 7 — HÉ câu hỏi/tình huống gợi tò mò, KHÔNG giảng nội dung): ${nexts.join("; ")}`
+        : `\n\nNODE KẾ TIẾP: (không có trong đồ thị) — nhịp 7 kết bằng lời hẹn nhẹ, KHÔNG bịa tên chủ đề cụ thể.`;
       const userPrompt = format === "video"
-        ? `${knowledgeContract(db, atom, pkg)}\n\nDựa DUY NHẤT vào Knowledge Contract trên, viết KỊCH BẢN VIDEO. Trả về JSON theo schema:\n${schema.video}`
+        ? `${knowledgeContract(db, atom, pkg)}${cliffCtx}\n\nDựa DUY NHẤT vào Knowledge Contract + NODE KẾ TIẾP trên, viết KỊCH BẢN VIDEO 7 NHỊP. Trả về JSON theo schema:\n${schema.video}`
         : `Từ Gói tri thức sau, tạo ${format}. Gói:\n${JSON.stringify(pkg.fields)}\nJSON theo schema: ${schema[format]}`;
       const content = await claudeJSON<unknown>(db, instructionPack(db, atom, pkg.level, format), userPrompt);
       // QC section (text/worksheet): heading/body phải là CHUỖI; BỎ section KHÔNG có nội dung — AI đôi khi
@@ -394,7 +420,7 @@ Bạn KHÔNG tự suy diễn/định nghĩa lại kiến thức, KHÔNG viết t
     }
   }
   await delay(500 + Math.random() * 700);
-  const content = format === "quiz" ? mockQuiz(db, pkg, atom) : format === "flashcard" ? offlineFlashcards(db, pkg, atom) : mockAsset(pkg, atom, format);
+  const content = format === "quiz" ? mockQuiz(db, pkg, atom) : format === "flashcard" ? offlineFlashcards(db, pkg, atom) : mockAsset(db, pkg, atom, format);
   return { content, ...mockMeter(content) };
 }
 
@@ -577,7 +603,7 @@ function qLines(pkg: Pkg): string[] {
   return pkg.fields.questions.split("\n").map((s) => s.trim()).filter(Boolean);
 }
 
-function mockAsset(pkg: Pkg, atom: TreeNode, format: AssetFormat): unknown {
+function mockAsset(db: DB, pkg: Pkg, atom: TreeNode, format: AssetFormat): unknown {
   const f = pkg.fields;
   const lv = pkg.level === 1 ? "Nhận biết" : pkg.level === 2 ? "Thông hiểu" : "Vận dụng";
   switch (format) {
@@ -633,26 +659,47 @@ function mockAsset(pkg: Pkg, atom: TreeNode, format: AssetFormat): unknown {
         { speaker: "Cô Mai", text: "Bài tập nhỏ cho em: " + (qLines(pkg)[0] || "tự lấy một ví dụ tương tự nhé.") },
         { speaker: "Bin", text: "Em làm được! Cảm ơn cô, hẹn gặp lại các bạn ở tập sau!" },
       ]};
-    case "video":
-      // Bản OFFLINE (không key) — kịch bản khung 5 phần (câu hỏi→gợi mở→minh hoạ→kết luận→kiểm tra),
-      // đổ chất liệu THẬT từ gói (canonical_definition/ví dụ/quan niệm sai). Bản có key sinh giàu hơn qua Contract.
+    case "video": {
+      // Bản OFFLINE (không key) — storyboard 7 NHỊP, đổ chất liệu THẬT từ gói + đồ thị
+      // (định nghĩa/ví dụ/quan niệm sai/node kế tiếp). Bản có key sinh giàu hơn qua Contract.
+      const { misconceptions } = atomKnowledge(db, atom);
+      const nexts = nextAtoms(db, atom);
+      const mis = misconceptions[0]?.text || firstLine(f.commonMistake);
+      const ex = firstLine(f.example);
+      const chot = (firstLine(f.objective) || firstLine(f.explanation)).slice(0, 140);
+      const q1 = (qLines(pkg)[0] || `Em thử tự lấy một ví dụ về "${atom.title}" xem nào?`).replace(/^\d+\.\s*/, "");
       return {
-        logline: `Nam thắc mắc về "${atom.title}" và được cô Hương giải thích bằng ví dụ đời thường.`,
-        characters: [{ name: "Cô Hương", role: "giáo viên" }, { name: "Nam", role: "học sinh" }],
+        videoTitle: atom.title,
+        logline: `Tim tự tin tuyên bố sai về "${atom.title}", An nghi ngờ, Leo pha trò — và thầy Dương gỡ rối trong ba phút.`,
+        characters: [{ name: "Dương", role: "người dẫn" }, { name: "Tim", role: "học sinh" }, { name: "An", role: "học sinh" }, { name: "Leo", role: "linh vật" }],
         scenes: [
-          { beat: "câu hỏi", setting: "Góc học tập sau giờ tan lớp", visual: `Nam nhìn quyển vở, trên bảng hiện nhan đề "${atom.title}".`,
-            dialogue: [{ speaker: "Nam", line: `Cô ơi, "${atom.title}" nghĩa là gì ạ?` }], animation: "Nam gãi đầu, dấu hỏi hiện trên đầu.", mucTieu: "Nêu đúng câu hỏi trọng tâm của bài." },
-          { beat: "gợi mở", setting: "Cô Hương ngồi cạnh Nam", visual: firstLine(f.example) ? "Cô Hương chỉ vào ví dụ quen thuộc trên bảng." : "Cô Hương dùng đồ vật quen thuộc để nói.",
-            dialogue: [...(firstLine(f.commonMistake) ? [{ speaker: "Nam", line: firstLine(f.commonMistake) }] : []), { speaker: "Cô Hương", line: firstLine(f.explanation) || firstLine(f.objective) }], animation: "Cô Hương chỉ tay vào ví dụ.", mucTieu: "Dùng ví dụ đời thường bám đúng bản chất." },
-          { beat: "minh hoạ", setting: "Trên bảng hoạt hình", visual: "Hình minh hoạ trực quan (hộp/nhóm/bảng) cho ví dụ.",
-            dialogue: [{ speaker: "Cô Hương", line: firstLine(f.example) ? `Ví dụ: ${firstLine(f.example)}` : "Em nhìn hình này nhé." }], animation: "Các phần tử của ví dụ lần lượt hiện ra.", mucTieu: "Trực quan hoá khái niệm, không nhân hoá." },
-          { beat: "kết luận", setting: "Hai cô trò mỉm cười", visual: "Dòng ghi nhớ hiện trên màn hình.",
-            dialogue: [{ speaker: "Cô Hương", line: `Nhớ nhé: ${firstLine(f.objective) || firstLine(f.explanation)}`.slice(0, 140) }], animation: "Khung ghi nhớ sáng lên.", mucTieu: "Nhắc lại đúng định nghĩa, không mở rộng." },
-          { beat: "câu hỏi kiểm tra", setting: "Màn hình cuối", visual: "Câu hỏi hiện ra cho người xem.",
-            dialogue: [{ speaker: "Cô Hương", line: (qLines(pkg)[0] || `Em thử tự lấy một ví dụ về "${atom.title}" xem nào?`) }], animation: "Đồng hồ đếm ngược nhẹ mời người xem suy nghĩ.", mucTieu: "Đặt 1 câu hỏi kiểm tra, không giải đáp." },
+          { beat: "mở màn", role: "veo", setting: "Sân trường, buổi sáng", visual: `Tim và An tranh luận về một tình huống đời thường gắn với "${atom.title}"; Leo nghiêng đầu bối rối.`,
+            dialogue: [{ speaker: "Tim", line: `Chuyện này dễ mà — chắc chắn luôn!` }, { speaker: "An", line: "Ơ, chắc không đấy?" }, { speaker: "Leo", line: "Để xem nào… hí hí!" }],
+            onScreenText: `Làm sao biết đúng về "${atom.title}"?`, animation: "Camera lia giữa Tim và An rồi dừng ở câu hỏi lớn giữa màn hình.",
+            veoAction: "Medium shot in a Vietnamese school courtyard: two 14-year-old students animatedly debating and gesturing, a friendly lion mascot tilts its head, comically puzzled; camera pans between them then holds.",
+            veoCast: ["TIM", "AN", "LEO"], mucTieu: "Hook kịch tính, nêu đúng câu hỏi trọng tâm.", durationSec: 22 },
+          { beat: "khơi động lực", role: "avatar", setting: "Thầy Dương xuất hiện góc phải", visual: "Thầy Dương nói với người xem, nền là khung hình sân trường làm mờ.",
+            dialogue: [{ speaker: "Dương", line: "Câu này thợ với kỹ sư giải mỗi ngày đấy. Vài phút nữa, con cũng làm được." }], animation: "Avatar thầy Dương vào khung, chữ lower-third hiện nhẹ.", mucTieu: "Tạo động lực, chưa giảng.", durationSec: 20 },
+          { beat: "dự đoán", role: "graphics", setting: "Thẻ câu hỏi đồ hoạ", visual: `Thẻ dự đoán về "${atom.title}"${mis ? ` (một phương án gài đúng lỗi hay gặp: ${mis})` : ""}.`,
+            dialogue: [{ speaker: "Dương", line: "Con đoán thử xem — đừng vội như bạn Tim nhé!" }], animation: "Đóng băng khung hình + đồng hồ đếm ngược 5 giây + dòng nhắc \"Con có thể bấm dừng nếu cần thêm thời gian\".", mucTieu: "Ngưng P1 mời người xem dự đoán.", durationSec: 18 },
+          { beat: "giảng cốt lõi", role: "graphics", setting: "Bảng đồ hoạ", visual: ex ? `Minh hoạ trực quan cho ví dụ: ${ex}` : `Hình trực quan (hộp/nhóm/bảng) cho "${atom.title}".`,
+            dialogue: [{ speaker: "Dương", line: firstLine(f.explanation) || firstLine(f.objective) }, ...(mis ? [{ speaker: "Tim", line: `Ơ, hoá ra "${mis}" là sai à?` }] : []), { speaker: "Leo", line: "À, ra vậy!" }], animation: "Từng phần tử sáng lên đúng lúc được gọi tên (signaling).", mucTieu: "Giảng cốt lõi, chỉnh quan niệm sai, chốt định nghĩa.", durationSec: 55 },
+          { beat: "checkpoint", role: "graphics", setting: "Thẻ câu hỏi đồ hoạ", visual: "Câu hỏi vận dụng ngắn cho người xem.",
+            dialogue: [{ speaker: "Dương", line: q1 }, { speaker: "Dương", line: chot }], animation: "Đóng băng + nhạc tắt hẳn + đồng hồ đếm ngược 7 giây, rồi thầy Dương giải đáp và bác phương án sai.", mucTieu: "Ngưng P2, giải đáp và bác phương án sai.", durationSec: 30 },
+          { beat: "ngoài đời", role: "veo", setting: "Vài cảnh đời thật", visual: `2–3 nơi dùng "${atom.title}" ngoài đời.`,
+            dialogue: [{ speaker: "Dương", line: `Nhiệm vụ nhỏ: tìm một tình huống quanh con dùng được "${atom.title}" nhé.` }], onScreenText: "🏠 Thử thách: tìm quanh nhà con",
+            animation: "Ba cảnh ứng dụng lướt nhanh rồi ghép lại.",
+            veoAction: "Quick documentary cuts of real Vietnamese settings where this knowledge is used in everyday work and life; warm natural light, no on-screen text.",
+            veoCast: [], mucTieu: "Nối kiến thức với đời sống + giao nhiệm vụ.", durationSec: 22 },
+          { beat: "củng cố", role: "veo", setting: "Cảnh kết gợi mở", visual: "Câu chốt hiện to để người xem đọc to; rồi một cảnh gợi tò mò về bài sau.",
+            dialogue: [{ speaker: "Dương", line: `Con đọc to lại nào: ${chot}` }, { speaker: "Dương", line: nexts.length ? `Nhưng còn "${nexts[0]}" thì sao? Hẹn con ở tập sau!` : "Hẹn gặp con ở tập sau nhé!" }],
+            onScreenText: nexts.length ? `Tập sau: ${nexts[0]}` : "Hẹn gặp ở tập sau", animation: "Brain-dump vài giây, rồi cảnh cliffhanger hiện ra, tối dần.",
+            veoAction: "A quiet, slightly mysterious real-life scene hinting at a harder related question; slow push-in, soft suspenseful mood, no on-screen text.",
+            veoCast: [], mucTieu: "Củng cố + cliffhanger sang node kế.", durationSec: 18 },
         ],
-        durationSec: 250, style: "Hoạt hình 2D, bảng màu tươi sáng",
+        durationSec: 185, style: "Hoạt hình 2D + quay thực, bảng màu tươi sáng",
       };
+    }
   }
 }
 

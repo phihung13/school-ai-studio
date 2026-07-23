@@ -1,0 +1,31 @@
+# Build lại trong image — đừng gửi bản Windows/local vào build context
+node_modules
+.next
+out
+
+# DB + dữ liệu runtime: mount volume lúc chạy, KHÔNG bake vào image
+data
+
+# Binary Windows nặng (workers/ffmpeg/*.exe ~389MB, typst.exe ~51MB) — image cài bản Linux riêng
+workers/ffmpeg
+workers/typst
+**/*.exe
+
+# Secrets & môi trường
+.env
+.env.*
+
+# Git & meta
+.git
+.gitignore
+.github
+
+# Tài liệu không cần khi chạy (next.config.ts KHÔNG bị ảnh hưởng — nó không phải .md)
+*.md
+
+# Rác hệ điều hành / editor
+.DS_Store
+Thumbs.db
+.vscode
+.idea
+npm-debug.log*

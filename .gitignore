@@ -51,4 +51,6 @@ next-env.d.ts
 /data/db.json
 /data/.impeccable/
 /data/import/
+# bộ bàn giao tutor (ngân hàng đề KÈM ĐÁP ÁN) — đã giao qua import, KHÔNG đưa lên repo public
+/data/tutor-bundles/
 # vẫn commit: /data/migration/id_map.frozen.json + /data/migration/*.md
