@@ -1,26 +1,162 @@
 @import "tailwindcss";
 
+@theme {
+  /* ===== Surfaces — trắng tinh, ánh xanh lá rất nhẹ ===== */
+  --color-canvas: oklch(0.988 0.006 150);
+  --color-surface: oklch(1 0 0);
+  --color-surface-2: oklch(0.968 0.011 155);
+  --color-sink: oklch(0.948 0.016 155);
+
+  /* ===== Ink — xanh gần đen ===== */
+  --color-ink: oklch(0.25 0.03 162);
+  --color-ink-2: oklch(0.44 0.03 158);
+  --color-muted: oklch(0.56 0.022 155);
+
+  /* ===== Lines ===== */
+  --color-line: oklch(0.905 0.013 155);
+  --color-line-strong: oklch(0.83 0.02 155);
+
+  /* ===== Brand: xanh lá cây ===== */
+  --color-brand: oklch(0.55 0.14 150);
+  --color-brand-ink: oklch(0.47 0.145 150);
+  --color-brand-deep: oklch(0.37 0.11 152);
+  --color-brand-bg: oklch(0.955 0.038 150);
+  --color-brand-line: oklch(0.85 0.075 150);
+  --color-on-brand: oklch(0.995 0.008 150);
+
+  /* ===== Brass: vàng nắng (nhấn phụ) ===== */
+  --color-brass: oklch(0.62 0.10 80);
+  --color-brass-ink: oklch(0.48 0.09 76);
+  --color-brass-bg: oklch(0.95 0.05 84);
+  --color-brass-line: oklch(0.86 0.07 82);
+
+  /* ===== Semantic ===== */
+  --color-ok: oklch(0.52 0.12 168);
+  --color-ok-bg: oklch(0.95 0.045 168);
+  --color-ok-line: oklch(0.85 0.07 168);
+  --color-warn: oklch(0.58 0.12 68);
+  --color-warn-bg: oklch(0.955 0.05 74);
+  --color-warn-line: oklch(0.86 0.08 72);
+  --color-danger: oklch(0.53 0.17 28);
+  --color-danger-bg: oklch(0.955 0.04 28);
+  --color-danger-line: oklch(0.86 0.07 28);
+  --color-info: oklch(0.50 0.10 240);
+  --color-info-bg: oklch(0.95 0.035 240);
+  --color-info-line: oklch(0.87 0.05 240);
+
+  /* ===== Level ramp (độ khó tăng dần) ===== */
+  --color-lv1: oklch(0.52 0.11 150);
+  --color-lv1-bg: oklch(0.95 0.045 150);
+  --color-lv2: oklch(0.55 0.12 68);
+  --color-lv2-bg: oklch(0.955 0.05 74);
+  --color-lv3: oklch(0.53 0.15 32);
+  --color-lv3-bg: oklch(0.955 0.04 32);
+
+  /* ===== Type — một font duy nhất cho toàn app ===== */
+  --font-sans: var(--font-viet), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-viet), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Code", monospace;
+
+  /* ===== Radius ===== */
+  --radius: 0.5rem;
+
+  /* ===== Motion ===== */
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+
+  /* ===== z-index scale ===== */
+  --z-sticky: 20;
+  --z-drawer: 40;
+  --z-backdrop: 45;
+  --z-modal: 50;
+  --z-toast: 60;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  color-scheme: light;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
+
+h1, h2, h3, .font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+::selection { background: var(--color-brand-bg); color: var(--color-brand-deep); }
+
+/* Focus ring nhất quán */
+*:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.scrollthin::-webkit-scrollbar { width: 10px; height: 10px; }
+.scrollthin::-webkit-scrollbar-thumb { background: var(--color-line-strong); border-radius: 10px; border: 3px solid var(--color-canvas); }
+.scrollthin::-webkit-scrollbar-track { background: transparent; }
+
+/* ===== Motion ===== */
+@keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes shimmer { 100% { transform: translateX(100%); } }
+.fade-up { animation: fadeUp 0.4s var(--ease-out-quart) both; }
+.fade-in { animation: fadeIn 0.3s ease both; }
+.stagger > * { animation: fadeUp 0.4s var(--ease-out-quart) both; }
+.stagger > *:nth-child(1) { animation-delay: 0.02s; }
+.stagger > *:nth-child(2) { animation-delay: 0.06s; }
+.stagger > *:nth-child(3) { animation-delay: 0.10s; }
+.stagger > *:nth-child(4) { animation-delay: 0.14s; }
+.stagger > *:nth-child(5) { animation-delay: 0.18s; }
+.stagger > *:nth-child(6) { animation-delay: 0.22s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-up, .fade-in, .stagger > * { animation: fadeIn 0.2s ease both; }
+  * { scroll-behavior: auto !important; }
+}
+
+/* ===== Flashcard flip ===== */
+.flip-card { perspective: 1200px; }
+.flip-inner { transition: transform 0.5s var(--ease-out-quart); transform-style: preserve-3d; position: relative; }
+.flip-card.flipped .flip-inner { transform: rotateY(180deg); }
+.flip-face { backface-visibility: hidden; position: absolute; inset: 0; }
+.flip-back { transform: rotateY(180deg); }
+@media (prefers-reduced-motion: reduce) { .flip-inner { transition: none; } }
+
+/* ===== Textured brand header (huy hiệu) ===== */
+.crest-rule {
+  background-image: repeating-linear-gradient(90deg, var(--color-brass) 0 18px, transparent 18px 26px);
+  height: 2px; opacity: 0.5;
+}
+
+/* ===== Login intro ===== */
+@keyframes leafpop { 0% { opacity: 0; transform: scale(0) translateY(6px); } 60% { transform: scale(1.12); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes growup { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes sway { 0%,100% { transform: rotate(-1.4deg); } 50% { transform: rotate(1.4deg); } }
+@keyframes floatleaf { 0% { transform: translate(0,0) rotate(0); opacity: 0; } 12% { opacity: .9; } 100% { transform: translate(var(--fx,40px), 120px) rotate(220deg); opacity: 0; } }
+.lf-trunk { transform-origin: bottom center; animation: growup .7s var(--ease-out-quart) both; }
+.lf-leaf { animation: leafpop .5s var(--ease-out-quart) both; transform-box: fill-box; transform-origin: center; }
+.lf-crown { transform-origin: center bottom; animation: sway 6s ease-in-out infinite; }
+.lf-float { animation: floatleaf var(--fd,7s) linear infinite; }
+@media (prefers-reduced-motion: reduce) { .lf-trunk,.lf-leaf { animation: fadeIn .3s ease both; } .lf-crown,.lf-float { animation: none; } }
+
+/* ===== Drill-down mindmap (zoom vào từng tầng) ===== */
+@keyframes mtZoomIn { from { opacity: 0; transform: scale(0.82); } to { opacity: 1; transform: scale(1); } }
+.mt-scene { animation: mtZoomIn 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; transform-origin: center 46%; }
+@keyframes mtBubble { from { opacity: 0; transform: scale(0.5); } to { opacity: 1; transform: scale(1); } }
+.mt-bubble { animation: mtBubble 0.4s var(--ease-out-quart) both; }
+.mt-dash { stroke-dasharray: 3 6; animation: mtFlow 2.2s linear infinite; }
+@keyframes mtFlow { to { stroke-dashoffset: -18; } }
+@media (prefers-reduced-motion: reduce) { .mt-scene,.mt-bubble { animation: fadeIn 0.2s ease both; } .mt-dash { animation: none; } }
+
+/* KaTeX: công thức khối rộng thì cuộn ngang trong khung riêng, không đẩy vỡ trang;
+   công thức trong dòng canh baseline theo chữ tiếng Việt. */
+.katex-inline { display: inline; }
+.katex-block { display: block; overflow-x: auto; overflow-y: hidden; padding: 2px 0; }
+.katex-block > .katex-display { margin: 0.35em 0; }
+.katex { font-size: 1.04em; }

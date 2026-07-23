@@ -39,3 +39,16 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# app data — DB sống + backup + cache + kho import (KHÔNG commit; giữ lại artifact di trú)
+*.db
+*.db-wal
+*.db-shm
+*.bak-*
+/data/studio.db*
+# binary tool bên thứ ba (ffmpeg/ffprobe/typst) — không commit, cài/tải riêng trên máy
+*.exe
+/data/db.json
+/data/.impeccable/
+/data/import/
+# vẫn commit: /data/migration/id_map.frozen.json + /data/migration/*.md
