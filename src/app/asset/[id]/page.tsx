@@ -283,7 +283,7 @@ function PodcastView({ assetId, content }: { assetId: string; content: { script:
   );
 }
 
-interface VideoScene { beat?: string; role?: "veo" | "avatar" | "graphics"; setting?: string; visual: string; dialogue?: { speaker: string; line: string; action?: string }[]; onScreenText?: string; animation?: string; veoAction?: string; veoCast?: string[]; mucTieu?: string; narration?: string; durationSec?: number }
+interface VideoScene { beat?: string; role?: "veo" | "avatar" | "graphics"; setting?: string; visual: string; dialogue?: { speaker: string; line: string; action?: string }[]; onScreenText?: string; giaiThichCongThuc?: string; animation?: string; veoAction?: string; veoCast?: string[]; mucTieu?: string; narration?: string; durationSec?: number }
 const ROLE_TAG: Record<string, { label: string; cls: string }> = {
   veo: { label: "QUAY · VEO", cls: "bg-brand/10 text-brand" },
   avatar: { label: "AVATAR · DƯƠNG", cls: "bg-brass/15 text-brass-ink" },
@@ -326,6 +326,7 @@ function VideoView({ content }: { content: { videoTitle?: string; logline?: stri
               ) : s.narration ? (
                 <p className="mt-2 text-sm text-ink-2"><b>Lời thoại:</b> “<M>{s.narration}</M>”</p>
               ) : null}
+              {s.giaiThichCongThuc && <p className="mt-2 text-xs text-ink-2"><b className="text-ink-2">Giải thích công thức:</b> <M>{s.giaiThichCongThuc}</M></p>}
               {s.onScreenText && <p className="mt-2 text-xs text-ink-2"><b className="text-ink-2">Chữ trên màn:</b> “<M>{s.onScreenText}</M>”</p>}
               {s.animation && <p className="mt-2 text-xs text-muted"><b className="text-ink-2">Animation:</b> <M>{s.animation}</M></p>}
               {s.role === "veo" && s.veoAction && (

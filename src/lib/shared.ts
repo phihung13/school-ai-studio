@@ -107,6 +107,8 @@ export interface Settings {
   tutorUrl?: string; tutorApikey?: string; tutorEmail?: string; tutorPassword?: string; tutorJwt?: string;
   // Bộ đếm ID tuần tự (Studio là bên sinh ID sau đồng nhất KC/Q/E/R). max đã cấp; sinh mới = ++counter.
   idSeq?: { q: number; e: number; r: number };
+  // Prompt sinh kịch bản video — sửa trong Cài đặt → Agents. Rỗng = dùng VIDEO_PROMPT mặc định (src/lib/video-prompt.ts).
+  videoPrompt?: string;
 }
 
 export const FORMAT_AGENT: Record<AssetFormat, string> = {

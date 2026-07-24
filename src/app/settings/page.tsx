@@ -193,7 +193,7 @@ function GeneralPanel({ me }: { me: User | null }) {
                 {testRes.ok ? <>Kết nối OK — model phản hồi: <b>{testRes.model}</b>. Bấm &ldquo;Lưu kết nối&rdquo; để dùng.</> : <>Không kết nối được: {testRes.error}</>}
               </p>
             )}
-            <p className="mt-2 text-[11px] text-muted">Key lưu trong dữ liệu app trên máy chủ trường (chỉ quản trị thấy trang này; client chỉ nhận 4 ký tự cuối). Có hiệu lực ngay — không cần khởi động lại. Lấy key tại console.anthropic.com.</p>
+            <p className="mt-2 text-[11px] text-muted">Key lưu trong dữ liệu app trên máy chủ trường (chỉ quản trị thấy trang này; client chỉ nhận 4 ký tự cuối). Có hiệu lực ngay — không cần khởi động lại. Lấy key tại openrouter.ai/keys.</p>
           </>
         )}
       </Card>

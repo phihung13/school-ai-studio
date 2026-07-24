@@ -4,11 +4,13 @@ import { Bot, Save } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { getData, api, Card, Button, PageLoading, LoadError, useToast, cls, FormatIcon } from "@/components/ui";
 import { AssetFormat, FormatSkill, FORMAT_LABEL, FORMAT_AGENT } from "@/lib/shared";
+import { VIDEO_PROMPT } from "@/lib/video-prompt";
 
 interface AgentsData {
   formats: AssetFormat[];
   skills: Record<AssetFormat, FormatSkill>;
   hasKey: boolean;
+  videoPrompt: string; // "" = đang dùng VIDEO_PROMPT mặc định
 }
 
 // Các định dạng có "phong cách hình ảnh" — loại khác ẩn field này.
@@ -152,6 +154,49 @@ function AgentCard({
   );
 }
 
+// Prompt sinh KỊCH BẢN VIDEO — nguồn chân lý mà generation ĐỌC THẬT (settings.videoPrompt || VIDEO_PROMPT mặc định).
+function VideoPromptCard({ initial, onStored, notify }: { initial: string; onStored: (v: string) => void; notify: (msg: string, kind?: "ok" | "err") => void }) {
+  const [val, setVal] = useState(initial || VIDEO_PROMPT);
+  const [busy, setBusy] = useState<"save" | "reset" | null>(null);
+  const dirty = val !== (initial || VIDEO_PROMPT);
+  const isDefault = val.trim() === VIDEO_PROMPT.trim();
+  const store = async (value: string, kind: "save" | "reset") => {
+    setBusy(kind);
+    try {
+      const toStore = value.trim() === VIDEO_PROMPT.trim() ? "" : value; // trùng mặc định → lưu rỗng
+      await api("saveVideoPrompt", { prompt: toStore });
+      onStored(toStore);
+      notify(kind === "reset" ? "Đã khôi phục prompt mặc định" : "Đã lưu prompt kịch bản video — dùng ngay cho lượt sinh sau");
+    } catch (e) { notify(e instanceof Error ? e.message : "Lỗi khi lưu", "err"); }
+    setBusy(null);
+  };
+  return (
+    <Card className="mt-4 p-5 fade-up">
+      <div className="flex flex-wrap items-center gap-2.5">
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-brand-bg"><FormatIcon format="video" size={26} className="text-brand" /></span>
+        <div>
+          <h2 className="flex flex-wrap items-center gap-2 text-base font-semibold text-ink">Video
+            <span className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-2 px-2.5 py-0.5 text-xs font-medium text-ink-2"><Bot size={12} strokeWidth={1.75} aria-hidden />{FORMAT_AGENT.video}</span>
+          </h2>
+          <p className="text-xs text-ink-2"><b>Kịch bản video (7 nhịp)</b> — prompt hệ thống dùng thật khi sinh; sửa ở đây có hiệu lực NGAY cho mọi lượt sinh sau.</p>
+        </div>
+        {!isDefault && <span className="ml-auto rounded-full bg-brass-bg px-2.5 py-0.5 text-xs font-semibold text-brass-ink">Đã tuỳ chỉnh</span>}
+      </div>
+      <textarea rows={22} value={val} onChange={(e) => setVal(e.target.value)}
+        className="mt-3 w-full resize-y rounded-md border border-line bg-surface-2/60 px-3 py-2.5 font-mono text-xs leading-relaxed text-ink outline-none transition focus:border-brand" />
+      <p className="mt-1.5 text-[11px] text-muted">Giữ nguyên tên các trường JSON ở khối đầu (videoTitle/scenes/beat/visual/dialogue/giaiThichCongThuc…) và 2 token: <code className="rounded bg-surface-2 px-1">{"{{atom}}"}</code> = tên nguyên tử · <code className="rounded bg-surface-2 px-1">{"{{cast}}"}</code> = bộ 4 nhân vật cố định.</p>
+      <div className="mt-3 flex justify-end gap-2">
+        <Button variant="ghost" onClick={() => { setVal(VIDEO_PROMPT); store(VIDEO_PROMPT, "reset"); }} disabled={!!busy || isDefault}>
+          {busy === "reset" ? "Đang khôi phục…" : "Khôi phục mặc định"}
+        </Button>
+        <Button onClick={() => store(val, "save")} disabled={!!busy || !dirty}>
+          <Save size={16} strokeWidth={1.75} aria-hidden /> {busy === "save" ? "Đang lưu…" : "Lưu prompt"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 export function AgentsPanel() {
   const [data, setData] = useState<AgentsData | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -188,8 +233,14 @@ export function AgentsPanel() {
             : "Đang dùng bộ soạn mô phỏng — cắm OPENROUTER_API_KEY để dùng AI thật"}
         </Card>
 
+        <VideoPromptCard
+          initial={data.videoPrompt}
+          onStored={(v) => setData((cur) => (cur ? { ...cur, videoPrompt: v } : cur))}
+          notify={show}
+        />
+
         <div className="mt-5 grid gap-4 lg:grid-cols-2">
-          {data.formats.map((f) => (
+          {data.formats.filter((f) => f !== "video").map((f) => (
             <AgentCard
               key={f}
               format={f}

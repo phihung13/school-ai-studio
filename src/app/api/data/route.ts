@@ -381,7 +381,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ cov });
     }
     case "formatSkills": {
-      return NextResponse.json({ formats: FORMATS, skills: db.settings.formatSkills || {}, hasKey: hasAiKey(db) });
+      return NextResponse.json({ formats: FORMATS, skills: db.settings.formatSkills || {}, hasKey: hasAiKey(db), videoPrompt: db.settings.videoPrompt || "" });
     }
     case "importStats": {
       return NextResponse.json({

@@ -574,6 +574,16 @@ export async function POST(req: NextRequest) {
       persist();
       return NextResponse.json({ ok: true });
     }
+    case "saveVideoPrompt": {
+      // Lưu/khôi phục prompt sinh kịch bản video (nguồn chân lý mà generation ĐỌC). Rỗng = dùng VIDEO_PROMPT mặc định.
+      if (!isAdmin) return bad("Chỉ quản trị", 403);
+      const { prompt } = body as { prompt?: string };
+      const p = String(prompt ?? "").trim().slice(0, 20000);
+      if (p) db.settings.videoPrompt = p; else delete db.settings.videoPrompt;
+      logActivity(user.name, db.settings.videoPrompt ? "cập nhật" : "khôi phục mặc định", "prompt kịch bản video", "/settings?tab=agents");
+      persist();
+      return NextResponse.json({ ok: true });
+    }
     // ===== Quản lý cây chương trình =====
     case "nodeCreate": {
       if (!isAdmin) return bad("Chỉ quản trị được sửa chương trình", 403);

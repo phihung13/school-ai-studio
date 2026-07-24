@@ -74,4 +74,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
 
 # tini = PID 1 gọn (thu hồi zombie từ chromium/ffmpeg/python con)
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["npm", "run", "start"]
+# Boot: nếu có SUPABASE env → dựng data/studio.db từ studio_kv (pull-db) rồi mới chạy; không có env → pull-db bỏ qua, dùng db local.
+CMD ["sh", "-c", "node scripts/pull-db.mjs && npm run start"]

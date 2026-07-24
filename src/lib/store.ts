@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import { DatabaseSync } from "node:sqlite";
+import { mirror, KV_SYNC_ON } from "./kv-sync";
 import type { User, TreeNode, Edge, Pkg, Asset, Review, Job, Proposal, Activity, Settings, OutlineNode, CardState, Question } from "./shared";
 
 export * from "./shared";
@@ -176,6 +177,8 @@ export function persist(): void {
   if (writing) { pending = true; return; }
   writing = true;
   const c = connect();
+  const ups: { collection: string; id: string; ord: number; j: unknown }[] = [];
+  const dels: { collection: string; id: string }[] = [];
   try {
     c.exec("BEGIN IMMEDIATE");
     try {
@@ -193,25 +196,28 @@ export function persist(): void {
           if (b.get(item.id) === key) return; // không đổi → không chạm vào đĩa
           upsert.run(item.id, i, j);
           b.set(item.id, key);
+          if (KV_SYNC_ON) ups.push({ collection: coll, id: item.id!, ord: i, j: item });
         });
         for (const id of Array.from(b.keys())) {
           if (alive.has(id)) continue;
           del.run(id);
           b.delete(id);
+          if (KV_SYNC_ON) dels.push({ collection: coll, id });
         }
         baseline.set(coll, b);
       }
       const kv = c.prepare("INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v");
       const settings = JSON.stringify(cache.settings);
-      if (kvBaseline.get("settings") !== settings) { kv.run("settings", settings); kvBaseline.set("settings", settings); }
+      if (kvBaseline.get("settings") !== settings) { kv.run("settings", settings); kvBaseline.set("settings", settings); if (KV_SYNC_ON) ups.push({ collection: "_meta", id: "settings", ord: 0, j: cache.settings }); }
       const secret = JSON.stringify(cache.secret);
-      if (kvBaseline.get("secret") !== secret) { kv.run("secret", secret); kvBaseline.set("secret", secret); }
+      if (kvBaseline.get("secret") !== secret) { kv.run("secret", secret); kvBaseline.set("secret", secret); if (KV_SYNC_ON) ups.push({ collection: "_meta", id: "secret", ord: 0, j: cache.secret }); }
       c.exec("COMMIT");
     } catch (e) {
       c.exec("ROLLBACK");
       throw e;
     }
     cacheVersion = dataVersion(c);
+    if (KV_SYNC_ON && (ups.length || dels.length)) mirror(ups, dels);
   } finally {
     writing = false;
     if (pending) { pending = false; persist(); }

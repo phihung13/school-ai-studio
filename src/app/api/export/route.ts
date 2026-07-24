@@ -201,7 +201,7 @@ interface SectionContent { sections: { heading: string; body: string; chart?: Sl
 interface QuizContent { questions: { type: string; q: string; options?: string[]; answer: unknown; explanation?: string; dok?: number; misconceptionRef?: string }[] }
 interface MindmapContent { markdown: string; chart?: SlideChart }
 interface PodcastContent { script: { speaker: string; text: string; mood?: string }[] }
-interface VideoScene { beat?: string; role?: "veo" | "avatar" | "graphics"; setting?: string; visual: string; dialogue?: { speaker: string; line: string; action?: string }[]; onScreenText?: string; animation?: string; veoAction?: string; veoCast?: string[]; mucTieu?: string; narration?: string; durationSec?: number }
+interface VideoScene { beat?: string; role?: "veo" | "avatar" | "graphics"; setting?: string; visual: string; dialogue?: { speaker: string; line: string; action?: string }[]; onScreenText?: string; giaiThichCongThuc?: string; animation?: string; veoAction?: string; veoCast?: string[]; mucTieu?: string; narration?: string; durationSec?: number }
 interface VideoContent { videoTitle?: string; logline?: string; characters?: { name: string; role?: string }[]; scenes: VideoScene[]; durationSec?: number; style?: string }
 
 // ══ PODCAST → MP3 giọng Việt THẬT (edge-tts, miễn phí) ══

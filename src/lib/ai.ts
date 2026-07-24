@@ -3,6 +3,7 @@ import { z, type ZodType } from "zod";
 import { QuizContentSchema, type QuizContent } from "./schemas/quiz";
 import { SlideContentSchema, DeckDecorSchema, SlideChartSchema, type SlideContentV2, type SlideChart } from "./schemas/slide";
 import { CAST_DIRECTIVE_VI } from "./video-kit";
+import { VIDEO_PROMPT } from "./video-prompt";
 
 // ── Nguyên liệu tri thức THẬT lấy thẳng từ DB (không bịa): yêu cầu cần đạt của atom,
 //    tiền đề (prerequisite_hard) và quan niệm sai (edges) — đây là thứ làm nội dung "có ruột". ──
@@ -89,7 +90,7 @@ export function instructionPack(db: DB, atom: TreeNode, level: number, format?: 
   ];
   if (refs.length) out.push(`# Tài liệu tham khảo (bám sát)`, ...refs.map((r) => `- ${r.title}: ${r.url}`));
   const fs = format ? db.settings.formatSkills?.[format] : undefined;
-  if (fs) out.push(
+  if (fs && format !== "video") out.push(  // video: dùng thẳng prompt kịch bản (settings.videoPrompt) — không chồng skill cũ
     `# Agent chuyên trách: ${fs.agent}`,
     fs.style ? `Phong cách viết: ${fs.style}` : "",
     fs.imageStyle ? `Phong cách hình ảnh: ${fs.imageStyle}` : "",
@@ -130,6 +131,7 @@ export function knowledgeContract(db: DB, atom: TreeNode, pkg: Pkg): string {
 // ---------- Gọi LLM qua OpenRouter (chuẩn OpenAI) — khi có key ----------
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 async function llmChat(key: string, model: string, messages: { role: string; content: string }[], maxTokens: number, jsonMode = false): Promise<{ text: string; model: string }> {
+  if (/[^\x00-\xFF]/.test(key)) throw new Error("Key chứa ký tự lạ (thường do bộ gõ tiếng Việt Telex/Unikey biến 'ee'→'ê'…) — xoá ô key, TẮT bộ gõ tiếng Việt rồi DÁN lại key sạch.");
   const res = await fetch(OPENROUTER_URL, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "X-Title": "VA Studio" },
@@ -355,34 +357,7 @@ LUẬT VĂN NÓI (BẮT BUỘC — đây là audio người thật nghe, không 
 - Mở đầu bằng TÌNH HUỐNG ĐỜI THẬT (chia bánh, đi chợ, điểm thi, đá bóng…) làm Bin thắc mắc — KHÔNG mở bằng "hôm nay cô trò mình học…".
 - Bin phải ĐOÁN SAI ít nhất 1 lần (bám quan niệm sai thật nếu có) rồi tự "à ra vậy!" (mood "ngạc nhiên") — khoảnh khắc vỡ òa là linh hồn của tập.
 - Kết: Bin đố lại NGƯỜI NGHE một câu nhỏ + lời chào ấm, hẹn tập sau.`,
-        video: `{"videoTitle":"tên video hấp dẫn hiển thị cho học sinh (vd 'Đo cột cờ mà không cần trèo')","logline":"1 câu: tình huống đời thường KÉO người xem vào câu hỏi của bài","characters":[{"name":"Dương","role":"người dẫn"},{"name":"Tim","role":"học sinh"},{"name":"An","role":"học sinh"},{"name":"Leo","role":"linh vật"}],"scenes":[{"beat":"mở màn|khơi động lực|dự đoán|giảng cốt lõi|checkpoint|ngoài đời|củng cố","role":"veo|avatar|graphics","setting":"bối cảnh ngắn","visual":"hình trực quan CỤ THỂ cho hoạ sĩ dựng","dialogue":[{"speaker":"tên","line":"lời thoại NGẮN, đọc ký hiệu thành lời"}],"onScreenText":"chữ gắn hậu kỳ trên màn (TEXT overlay) nếu có","animation":"chuyển động chính (kèm khoảnh khắc ngưng/đếm ngược nếu có)","veoAction":"CHỈ khi role=veo: mô tả cảnh quay TIẾNG ANH ~8s, không thoại, không chữ; KHÔNG chép style/nhân vật (hệ thống tự ghép)","veoCast":["TIM"],"mucTieu":"mục tiêu sư phạm của cảnh","durationSec":26}],"durationSec":185,"style":"Hoạt hình 2D + quay thực, màu tươi sáng"}
-
-# VAI TRÒ: BẠN LÀ BIÊN KỊCH VIDEO GIÁO DỤC — KHÔNG PHẢI GIÁO VIÊN.
-Bạn KHÔNG tự suy diễn/định nghĩa lại kiến thức, KHÔNG viết theo trí nhớ. Bạn CHỈ chuyển hoá KNOWLEDGE CONTRACT (ở phần đầu tin nhắn) thành kịch bản dễ hiểu. Đầu vào thiếu/mơ hồ → GIỮ NGUYÊN, không tự bổ sung.
-# THỜI LƯỢNG: video NGẮN ~3 PHÚT — TỔNG durationSec 170–200 (TUYỆT ĐỐI ≤ 210). Đây là MỘT nguyên tử kiến thức: đi thẳng vào trọng tâm, KHÔNG lan man, KHÔNG nhồi ý ngoài Contract. Một ví dụ ĐẮT hơn ba ví dụ thường — thà cảnh ngắn còn hơn dài dòng.
-# CẤU TRÚC BẮT BUỘC — ĐÚNG 7 NHỊP, đúng thứ tự (điền "beat" đúng tên nhịp); thời lượng gợi ý trong ngoặc:
-1. mở màn — HOOK · role="veo" (~22s): TÌNH HUỐNG ĐỜI THẬT (sân trường/đời sống) — **Tim và An** cãi nhau / cá cược (một người tuyên bố SAI đầy tự tin), **Leo** pha trò → bật ra ĐÚNG MỘT câu hỏi về "${atom.title}". 12 giây đầu phải "dính mắt": vào thẳng tình huống, KHÔNG chào hỏi, KHÔNG "hôm nay chúng ta học…". Kết nhịp bằng câu hỏi lớn hiện giữa màn hình (điền "onScreenText"). veoCast = các nhân vật có mặt.
-2. khơi động lực · role="avatar" (~20s): **Dương** (người dẫn) khơi VÌ SAO đáng học — nối câu hỏi với một nghề/việc thật (thợ, kỹ sư, người bán hàng…) + hứa "vài phút nữa con sẽ làm được". Chỉ TẠO ĐỘNG LỰC, CHƯA giảng. (Không cần veoAction.)
-3. dự đoán — NGƯNG P1 · role="graphics" (~18s): thẻ câu hỏi dự đoán (đồ hoạ); nếu Contract có common_misconceptions thì gài đúng lỗi đó vào một phương án. "animation" = đóng băng + thẻ câu hỏi + đếm ngược 5 giây + dòng nhắc "Con có thể bấm dừng nếu cần thêm thời gian", rồi HÉ NHANH hướng đúng. Giọng dẫn: Dương.
-4. giảng cốt lõi · role="graphics" (~55s — nhịp DÀI NHẤT): đồ hoạ/hình trực quan (Veo KHÔNG vẽ được ký hiệu toán); **Dương** giảng qua ĐÚNG ví dụ đời thường (ưu tiên allowed_examples; bắc cầu kien_thuc_tien_de), từng phần tử SÁNG LÊN đúng lúc gọi tên (signaling), **Leo** chen 1 câu tếu. Chỉnh quan niệm sai đã đoán ở nhịp 3. Chốt canonical_definition 1 câu dễ nhớ. KHÔNG fantasy, KHÔNG nhân hoá, KHÔNG mở rộng ngoài Contract.
-5. checkpoint — NGƯNG P2 · role="graphics" (~30s): thẻ câu hỏi vận dụng (đồ hoạ). "animation" = đóng băng + nhạc TẮT HẲN + đếm ngược 7 giây. SAU đó **Dương** giải đáp: vì sao đáp đúng + vì sao TỪNG phương án nhiễu sai (bám common_misconceptions).
-6. ngoài đời · role="veo" (~22s): 2–3 cảnh QUAY THẬT nơi kiến thức dùng ngoài đời (mỗi cảnh 1 câu) + giao MỘT nhiệm vụ nhỏ về nhà gắn với "${atom.title}". Các cảnh này thường KHÔNG có nhân vật cố định → veoCast=[] và tả người/vật trong "veoAction". KHÔNG thêm kiến thức mới.
-7. củng cố + CLIFFHANGER · role="veo" (~18s): **Dương** mời đọc to lại 1 câu chốt (brain-dump — ghi trong "animation"); rồi CLIFFHANGER là một cảnh QUAY gợi tò mò về NODE KẾ TIẾP (xem mục "NODE KẾ TIẾP" cuối tin nhắn) — CHỈ hé câu hỏi/tình huống, TUYỆT ĐỐI KHÔNG giảng nội dung node đó. Không có node kế → lời hẹn nhẹ, KHÔNG bịa tên chủ đề.
-# LÀM CHO KỊCH BẢN SỐNG ĐỘNG (đây là chỗ khác nhau giữa kịch bản HAY và kịch bản KHÔ — bám sát):
-- HOOK có KỊCH TÍNH, KHÔNG "bâng quơ thắc mắc": cho nhân vật CÁ CƯỢC / tuyên bố SAI đầy tự tin / gặp tình huống BẤT NGỜ tạo ra "cái để tranh cãi" rồi mới bật ra câu hỏi. (Kiểu: hai bạn cãi nhau cột cờ cao 15m hay 10m → lát sau lộ ra cả hai đều sai.)
-- THOẠI CÓ TÍNH CÁCH như người thật nói: câu ngắn, có cảm thán tự nhiên ("Ơ?", "Thế á?", "Trời!", "À… ra vậy!"), có chút hài; nhân vật chưa hiểu phải ĐOÁN SAI (bám common_misconceptions) rồi mới vỡ ra. TRÁNH thoại liệt kê khô như đọc SGK ("A là…, B là…, C là…").
-- GIẢNG bằng VÍ DỤ CỤ THỂ: nếu Contract có ví dụ/con số/tình huống thật → DẪN QUA TỪNG BƯỚC bằng chính con số/ví dụ đó, tính ra kết quả cụ thể (đọc ký hiệu thành lời) — KHÔNG chỉ phát biểu định nghĩa suông. Contract KHÔNG có số → kể bằng hình ảnh/so sánh đời thường thật đắt, vẫn cụ thể.
-- CHECKPOINT phải BÁC TỪNG PHƯƠNG ÁN SAI: khi giải đáp nói RÕ vì sao đáp đúng VÀ vì sao mỗi nhiễu sai (bám common_misconceptions) — đừng chỉ công bố đáp án.
-- "visual"/"animation" tả CÓ HÌNH cho hoạ sĩ storyboard: góc máy, vật cận cảnh, phần tử nào SÁNG/MỜ lúc nào (kiểu "cận cảnh viên gạch đỏ", "camera lia…", "gạch chéo mờ cột trái khi chốt") — không tả chung chung.
-# TRẦN KIẾN THỨC (BẮT BUỘC): mọi sự phong phú CHỈ ở CÁCH KỂ (kịch tính, thoại, hình ảnh, nhịp). TUYỆT ĐỐI KHÔNG thêm kiến thức/ví dụ/con số NGOÀI Knowledge Contract. Contract nghèo → kể DUYÊN hơn, KHÔNG bịa cho "giàu".
-${CAST_DIRECTIVE_VI}
-# RÀNG BUỘC:
-- KHÔNG nhân hoá ký hiệu/công thức (xem luật "CẤM NHÂN HOÁ" ở phần system). Ký hiệu hiện trên màn giữ NGUYÊN chuẩn, đúng vị trí; trong lời thoại phải ĐỌC THÀNH LỜI ("p/q"→"p trên q", "∈"→"thuộc", "≠ 0"→"khác không", "="→"bằng").
-- ĐƯỢC đổi: bối cảnh, đồ vật, cách nói — MIỄN không đổi bản chất kiến thức. KHÔNG đổi tên/vai 4 nhân vật cố định. KHÔNG được đổi/bịa phép toán, ký hiệu, con số.
-- "visual" tả hình cho hoạ sĩ dựng; "animation" tả chuyển động + khoảnh khắc ngưng; KHÔNG chép lại lời thoại vào visual/animation/veoAction.
-- Câu thoại NGẮN (nói được trong một hơi), không đọc như văn viết.
-- TỔNG durationSec ≤ 210 (mục tiêu ~3 phút).
-# TỰ KIỂM trước khi xuất — nếu BẤT KỲ câu nào "CÓ" thì viết lại: □ Không đủ 7 nhịp / sai thứ tự? □ Thiếu "role" ở cảnh nào? □ role="veo" mà thiếu "veoAction"/"veoCast"? □ veoAction chép lại thoại tiếng Việt (thay vì tả cảnh quay tiếng Anh)? □ Tổng durationSec > 210? □ Hook chỉ "bâng quơ thắc mắc", thiếu kịch tính (cá cược/tuyên bố sai/bất ngờ)? □ Thoại KHÔ như đọc SGK ("A là…, B là…")? □ Cliffhanger LỠ giảng nội dung node kế? □ Sai/diễn giải lệch toán? □ Thêm kiến thức ngoài Contract? □ Nhân hoá công thức? □ Học sinh lớp mục tiêu KHÓ hiểu ngay?`,
+        video: (db.settings.videoPrompt?.trim() || VIDEO_PROMPT).replaceAll("{{atom}}", atom.title).replaceAll("{{cast}}", CAST_DIRECTIVE_VI),
       };
       // Video = khoá nội dung bằng Knowledge Contract (chống ảo giác); các định dạng khác giữ prompt chung.
       // Bơm NODE KẾ TIẾP (từ đồ thị) để nhịp 7 dựng cliffhanger trỏ đúng bài sau, KHÔNG bịa chủ đề.
