@@ -5,7 +5,7 @@ import {
   EdgeRelation, RELATION_HEX, RELATION_LABEL, RELATION_COLOR, ATOM_TYPE_LABEL, ATOM_TYPE_COLOR,
   AtomType, PkgStatus, STATUS_LABEL, PKG_STATUS_COLOR, FIELD_LABEL, LEVEL_LABEL, readableMath,
 } from "@/lib/shared";
-import { cls, getData, richNodes, mathNodes } from "./ui";
+import { cls, getData, mathNodes } from "./ui";
 import { ArrowUpRight, X, BookOpen, Lightbulb, AlertTriangle, Compass, Link2, GraduationCap, Layers, ListChecks, Check } from "lucide-react";
 
 interface GNode { id: string; code: string; title: string; atomType: AtomType | null; dok: number | null; bloom: string | null; nangLuc?: string | null; yeuCau?: string | null; verified: boolean; ch: number; chTitle: string; lessonId?: string; lessonTitle?: string; subject?: string; subjectId?: string; grade?: number | null; ci?: number; inScope?: boolean; kind?: string; atomCount?: number; edgeCount?: number; x?: number; y?: number; vx?: number; vy?: number; fx?: number | null; fy?: number | null; dx?: number; dy?: number; h1?: number; h2?: number; }
@@ -38,21 +38,20 @@ function wrapLabel(ctx: CanvasRenderingContext2D, text: string, maxW: number, ma
   while (ctx.measureText(last + "…").width > maxW && last.length > 1) last = last.slice(0, -1);
   kept[maxLines - 1] = last + "…"; return kept;
 }
-// markdown nhẹ: **đậm**, gạch đầu dòng, đánh số, ⚠/→
-// dùng CHUNG bộ hiển thị của ui.tsx: mũ/chỉ số ra <sup>/<sub> thật + **in đậm**
-const boldParts = (s: string): React.ReactNode[] => richNodes(s);
+// markdown nhẹ: **đậm**, gạch đầu dòng, đánh số, ⚠/→. Render nội dung bằng KaTeX (mathNodes) → công thức \(…\) hiện ĐÚNG
+// (dấu căn/phân số/vectơ), không rơi vào Unicode gần đúng. Tiền tố (số/•/→/⚠) nhận diện trên chuỗi GỐC (còn \(…\)).
 function renderRich(text: string): React.ReactNode {
   return text.split(/\n/).map((raw, i) => {
     const indent = raw.match(/^\s*/)?.[0].length || 0;
-    const ln = readableMath(raw, { marks: true });   // đánh dấu mũ/chỉ số; các regex nhận diện dưới đây không đụng dấu
-    if (!ln) return <div key={i} className="h-1.5" />;
-    const num = ln.match(/^(\d+[.)])\s+(.*)$/);
-    const isBullet = /^[•\-*]\s+/.test(ln);
-    const arrow = /^→/.test(ln), warn = /^⚠/.test(ln);
+    const t = raw.replace(/^\s+/, "");
+    if (!t) return <div key={i} className="h-1.5" />;
+    const num = t.match(/^(\d+[.)])\s+([\s\S]*)$/);
+    const isBullet = /^[•\-*]\s+/.test(t);
+    const arrow = /^→/.test(t), warn = /^⚠/.test(t);
     const pad = indent >= 3 ? "pl-3.5" : "";
-    if (num) return <div key={i} className={cls("flex gap-1.5", pad)}><span className="shrink-0 font-semibold text-brand">{num[1]}</span><span>{boldParts(num[2])}</span></div>;
-    if (isBullet) return <div key={i} className={cls("flex gap-1.5", pad)}><span className="shrink-0 text-brand">•</span><span>{boldParts(ln.replace(/^[•\-*]\s+/, ""))}</span></div>;
-    return <div key={i} className={cls(pad, arrow && "text-ok", warn && "font-medium text-danger")}>{boldParts(ln)}</div>;
+    if (num) return <div key={i} className={cls("flex gap-1.5", pad)}><span className="shrink-0 font-semibold text-brand">{num[1]}</span><span>{mathNodes(num[2])}</span></div>;
+    if (isBullet) return <div key={i} className={cls("flex gap-1.5", pad)}><span className="shrink-0 text-brand">•</span><span>{mathNodes(t.replace(/^[•\-*]\s+/, ""))}</span></div>;
+    return <div key={i} className={cls(pad, arrow && "text-ok", warn && "font-medium text-danger")}>{mathNodes(t)}</div>;
   });
 }
 
@@ -396,7 +395,9 @@ export default function GraphView({ nodes: raw, edges: rawEdges, rootTitle, onOp
       const n = st.byId.get(id); if (!n) continue;
       const o = nOff(n);
       const sp = w2s(n.x! + o.x, n.y! + o.y); const nx = sp.x, ny = sp.y; if (nx < -90 || nx > W + 90 || ny < -40 || ny > H + 40) continue;
-      const lines = wrapLabel(ctx, readableMath(n.title), MAXW);
+      // Nhãn vẽ trên CANVAS: bỏ dấu ghép ký hiệu (U+20D0–20FF, gồm mũi tên vectơ ⃗) vì font canvas không có → ra ô vuông □.
+      // (Panel bên phải vẫn hiện vectơ đúng bằng KaTeX.) KHÔNG đụng dấu tiếng Việt (nằm ở U+0300–036F).
+      const lines = wrapLabel(ctx, readableMath(n.title).replace(/[⃐-⃿]/g, ""), MAXW);
       let tw = 0; for (const l of lines) tw = Math.max(tw, ctx.measureText(l).width);
       const bw = tw + PAD * 2, bh = lines.length * LH + PAD * 2, r = rNode(n) * v.k;
       const bx = nx + r + 6, by = ny - bh / 2, box = { x: bx, y: by, w: bw, h: bh };

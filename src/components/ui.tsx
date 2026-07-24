@@ -17,7 +17,8 @@ export function mathNodes(raw?: string | null): React.ReactNode[] {
   return splitMath(String(raw)).map((s, i) =>
     s.math
       ? <span key={i} className={s.display ? "katex-block" : "katex-inline"} dangerouslySetInnerHTML={{ __html: katexHtml(s.value, s.display) }} />
-      : <React.Fragment key={i}>{richNodes(readableMath(s.value, { marks: true }))}</React.Fragment>,
+      // readableMath .trim() cắt mất space ở ranh giới chữ↔công thức → dính ("Tínhc"). Giữ lại 1 space nếu đoạn gốc có.
+      : <React.Fragment key={i}>{/^\s/.test(s.value) ? " " : null}{richNodes(readableMath(s.value, { marks: true }))}{/\s$/.test(s.value) ? " " : null}</React.Fragment>,
   );
 }
 // Nhận chuỗi ĐÃ đánh dấu (dùng khi nơi gọi cần tự cắt tiền tố dòng: gạch đầu dòng, số thứ tự…).
