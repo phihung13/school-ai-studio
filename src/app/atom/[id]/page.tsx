@@ -147,11 +147,19 @@ export default function AtomPage({ params }: { params: Promise<{ id: string }> }
               <span className="text-sm font-medium text-ink">Gói tri thức</span>
               {pkg && <StatusBadge status={pkg.status} />}
               {pkg && <span className="text-[11px] text-muted">v{pkg.version} · {pkg.updatedBy}</span>}
-              <span className="ml-auto">
+              <span className="ml-auto flex items-center gap-2">
                 {pkg ? (
-                  <Link href={`/package/${pkg.id}`}>
-                    <Button variant="secondary">{canEdit ? <><FolderOpen size={15} /> Mở gói</> : <><Eye size={15} /> Xem gói</>}</Button>
-                  </Link>
+                  <>
+                    {canEdit && pkg.status !== "approved" && (
+                      <Button variant="secondary" disabled={!!busy}
+                        onClick={() => { if (window.confirm("Sinh lại gói mức này bằng AI? Nội dung nháp hiện tại sẽ bị GHI ĐÈ, và học liệu đã sinh từ gói này sẽ bị đánh dấu 'cần cập nhật'.")) draft(lvl as 1 | 2 | 3); }}>
+                        {busy === `draft-${lvl}` ? <Spinner label="AI đang nháp…" /> : <><Wand2 size={15} /> Sinh lại</>}
+                      </Button>
+                    )}
+                    <Link href={`/package/${pkg.id}`}>
+                      <Button variant="secondary">{canEdit ? <><FolderOpen size={15} /> Mở gói</> : <><Eye size={15} /> Xem gói</>}</Button>
+                    </Link>
+                  </>
                 ) : canEdit ? (
                   <Button variant="primary" disabled={!!busy} onClick={() => draft(lvl as 1 | 2 | 3)}>
                     {busy === `draft-${lvl}` ? <Spinner label="AI đang nháp…" /> : <><Wand2 size={15} /> Nháp bằng AI</>}

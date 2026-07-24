@@ -79,6 +79,9 @@ export function instructionPack(db: DB, atom: TreeNode, level: number, format?: 
     // Vấn đề GV nêu: LLM hay TỰ DIỄN GIẢI/nhân hoá toán (∈ ∉ ⊂ log lim đạo hàm vectơ…) thành ví dụ SAI bản chất.
     `# CẤM NHÂN HOÁ / TỰ DIỄN GIẢI TOÁN (BẮT BUỘC — mọi định dạng)`,
     `Bạn CHUYỂN HOÁ kiến thức ĐÃ CHO thành học liệu, TUYỆT ĐỐI KHÔNG tự sáng tác/định nghĩa lại toán và KHÔNG nhân hoá ký hiệu/khái niệm làm sai bản chất. SAI: "số 5 chạy vào tập hợp", "phân số thích ở cùng nhau", "vectơ muốn đi sang trái", "đạo hàm là chiếc xe". ĐÚNG: mô tả HÀNH ĐỘNG của người/vật minh hoạ — "học sinh đặt số 5 vào hộp", "giáo viên khoanh nhóm các số", "dùng mũi tên trên giấy kẻ ô để biểu diễn vectơ". Ký hiệu trên màn hình giữ NGUYÊN chuẩn, đúng vị trí — không đổi, không bỏ ngoặc, không tự thêm ký hiệu. KHÔNG đưa khái niệm/ví dụ nằm ngoài kiến thức được cung cấp.`,
+    // Công thức phải KaTeX-render được trên app → bọc \(…\); tránh rơi vào bản Unicode gần đúng (mất gạch phân số/mũ lồng).
+    `# ĐỊNH DẠNG CÔNG THỨC (BẮT BUỘC — mọi định dạng)`,
+    `MỌI công thức/ký hiệu toán PHẢI bọc trong \\(…\\) (LaTeX inline). Vd đúng: "\\(v = \\dfrac{s}{t}\\)", "\\(x^2\\)", "\\(\\sqrt{2}\\)", "\\(p, q \\in \\mathbb{Z}\\)", "\\(q \\neq 0\\)". TUYỆT ĐỐI KHÔNG viết công thức trần (v = s/t) hay dùng ký tự Unicode toán (², √, ∈, ≠, ×, ½). Chỉ văn xuôi thuần mới để ngoài \\(…\\).`,
     // Quy định nhà trường 2026-07-10: nguyên tử = đơn vị nhỏ nhất → mỗi học liệu phải "tiêu thụ" xong trong ≤10 phút
     `# NGÂN SÁCH THỜI LƯỢNG (quy định nhà trường — BẮT BUỘC)`,
     `Mỗi học liệu của MỘT nguyên tử phải học/nghe/làm xong trong TỐI ĐA 10 PHÚT. Cụ thể: bài đọc ≤ 900 từ; slide ≤ 9 trang (mỗi trang ~1 phút giảng); podcast ≤ 5 phút nghe (lượt thoại ngắn); phiếu học tập ≤ 8 câu (~10 phút làm); quiz ≤ 5 câu; gói tri thức: phần giải thích ≤ 250 từ. Ưu tiên NGẮN MÀ SÂU — một ví dụ đắt hơn ba ví dụ thường; cắt ý trùng lặp thay vì viết thêm.`,
