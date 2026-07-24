@@ -154,3 +154,5 @@ studio.truongvietanh.com {
 | Podcast không có nhạc hiệu/chuẩn âm | edge-tts cần **Internet** (gọi dịch vụ Microsoft). Kiểm tra VPS ra được mạng. |
 | `docker compose pull` báo denied | Package Private mà VPS chưa `docker login ghcr.io` (bước 2), hoặc `STUDIO_IMAGE` sai. |
 | Đổi mật khẩu login | Sửa `DEMO_PASSWORD` trong `.env` → `docker compose up -d`. |
+
+<!-- test auto-deploy 2026-07-24T09:45:20Z -->
