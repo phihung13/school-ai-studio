@@ -174,7 +174,10 @@ async function claudeJSONValidated<T>(db: DB, system: string, prompt: string, sc
 // ---------- Kiểm tra kết nối (nút "Kiểm tra" trong Cài đặt): gọi thật 1 lượt tí hon ----------
 export async function testAiConnection(key: string, model: string): Promise<{ ok: boolean; model: string; error?: string }> {
   try {
-    const { text, model: used } = await llmChat(key, model, [{ role: "user", content: "Trả về đúng chữ: OK" }], 16);
+    // 300 token: model "suy luận" (DeepSeek V4/R1…) tốn token cho phần reasoning ẩn TRƯỚC khi trả lời —
+    // trần thấp từng làm content rỗng (hết token giữa chừng "suy nghĩ") → báo lỗi trống, gây khó hiểu.
+    const { text, model: used } = await llmChat(key, model, [{ role: "user", content: "Trả về đúng chữ: OK" }], 300);
+    if (!text.trim()) throw new Error("Model không trả nội dung (có thể là model suy luận cần nhiều token hơn, hoặc model không tồn tại) — thử model khác.");
     return { ok: text.toUpperCase().includes("OK"), model: used };
   } catch (e) {
     const m = e instanceof Error ? e.message : String(e);
