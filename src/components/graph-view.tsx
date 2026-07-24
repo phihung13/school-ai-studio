@@ -804,7 +804,7 @@ function NodePanel({ node, detail, busy, pkgs, curPkg, lvl, setLvl, neighbors, o
       <PanelHead crumb={`${node.chTitle}${node.lessonTitle ? ` › ${node.lessonTitle}` : ""}`} title={mathNodes(node.title)} onClose={onClose}
         badge={
           <div className="mt-1.5 flex flex-wrap items-center gap-1">
-            <span className="rounded-full bg-black/5 px-2 py-0.5 font-mono text-[10px] text-ink-2">{node.code}</span>
+            <span className="rounded-full bg-black/5 px-2 py-0.5 font-mono text-[10px] text-ink-2">{node.id}</span>
             {node.atomType && <span className={cls("rounded-full px-2 py-0.5 text-[10px] font-medium", ATOM_TYPE_COLOR[node.atomType])}>{ATOM_TYPE_LABEL[node.atomType]}</span>}
             {node.bloom && <span className="rounded-full bg-black/5 px-2 py-0.5 text-[10px] text-ink-2">{node.bloom}</span>}
             {node.dok != null && <span className="rounded-full bg-black/5 px-2 py-0.5 text-[10px] text-ink-2">DOK {node.dok}</span>}
@@ -980,12 +980,12 @@ function EdgePanel({ link, onClose, onPick }: { link: SimLink; onClose: () => vo
         <div className="space-y-1.5">
           <button onClick={() => onPick(link.source.id)} className="flex w-full items-center gap-2 rounded-xl border border-black/5 bg-white/60 px-3 py-2.5 text-left transition hover:bg-white/90">
             <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-bold text-white" style={{ background: RELATION_HEX[rel] }}>A</span>
-            <span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium text-ink">{mathNodes(link.source.title)}</span><span className="font-mono text-[10px] text-muted">{link.source.code}</span></span>
+            <span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium text-ink">{mathNodes(link.source.title)}</span><span className="font-mono text-[10px] text-muted">{link.source.id}</span></span>
           </button>
           <p className="pl-3 text-[11px] italic text-muted">↓ {dirLabel}</p>
           <button onClick={() => onPick(link.target.id)} className="flex w-full items-center gap-2 rounded-xl border border-black/5 bg-white/60 px-3 py-2.5 text-left transition hover:bg-white/90">
             <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-bold text-white" style={{ background: RELATION_HEX[rel] }}>B</span>
-            <span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium text-ink">{mathNodes(link.target.title)}</span><span className="font-mono text-[10px] text-muted">{link.target.code}</span></span>
+            <span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium text-ink">{mathNodes(link.target.title)}</span><span className="font-mono text-[10px] text-muted">{link.target.id}</span></span>
           </button>
         </div>
 
