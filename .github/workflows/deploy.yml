@@ -1,6 +1,6 @@
 name: build-and-deploy
 
-# Mỗi lần push lên nhánh chính: build Docker image → đẩy lên GHCR → (tùy chọn) SSH vào VPS pull + restart.
+# Mỗi lần push lên nhánh chính: build Docker image → đẩy lên GHCR → (tùy chọn) gọi Coolify API redeploy.
 on:
   push:
     branches: [main, master]
@@ -50,22 +50,16 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # Tự deploy lên VPS: chỉ chạy khi đặt repo variable VPS_DEPLOY=true và đủ 3 secret bên dưới.
+  # Tự redeploy trên Coolify: chỉ chạy khi đặt repo variable VPS_DEPLOY=true và đủ 3 secret bên dưới.
+  # Coolify tự PULL image ':latest' mới nhất từ GHCR khi nhận lệnh deploy này — không cần SSH.
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
     if: ${{ vars.VPS_DEPLOY == 'true' }}
     steps:
-      - name: SSH vào VPS → pull image mới & restart
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT || 22 }}
-          script: |
-            set -e
-            cd "${{ secrets.VPS_PATH }}"
-            docker compose pull
-            docker compose up -d
-            docker image prune -f
+      - name: Gọi Coolify API → redeploy (kéo image mới)
+        run: |
+          set -e
+          curl -fsS -X POST \
+            "${{ secrets.COOLIFY_URL }}/api/v1/deploy?uuid=${{ secrets.COOLIFY_APP_UUID }}&force=true" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}"
