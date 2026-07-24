@@ -17,13 +17,31 @@ const TABLE = { users: "users", tree: "tree", edges: "edges", packages: "package
 const COLLS = Object.keys(TABLE);
 
 async function pullAll() {
-  const out = []; let off = 0; const page = 1000;
-  for (;;) {
-    const r = await fetch(`${REST}?select=collection,id,ord,j&order=collection,id&limit=${page}&offset=${off}`, { headers: H });
-    if (!r.ok) { console.error("[pull-db] lỗi", r.status, (await r.text().catch(() => "")).slice(0, 300)); process.exit(1); }
-    const rows = await r.json(); out.push(...rows);
-    if (rows.length < page) break; off += page;
-  }
+  const sel = "select=collection,id,ord,j&order=collection,id";
+  const page = 1000;
+  const fail = async (r) => { console.error("[pull-db] lỗi", r.status, (await r.text().catch(() => "")).slice(0, 300)); process.exit(1); };
+  // Trang ĐẦU kèm Prefer:count=exact → biết TỔNG số dòng (Content-Range), để bắn các trang còn lại SONG SONG
+  // thay vì tuần tự (34.917 dòng ≈ 35 lượt round-trip tới ap-southeast-1 → boot nhanh hơn nhiều lần).
+  const first = await fetch(`${REST}?${sel}&limit=${page}&offset=0`, { headers: { ...H, Prefer: "count=exact" } });
+  if (!first.ok) await fail(first);
+  const out = await first.json();
+  const total = Number(first.headers.get("content-range")?.split("/")[1]) || out.length;
+  if (out.length >= total) return out;
+
+  const offs = []; for (let o = page; o < total; o += page) offs.push(o);
+  const pages = new Array(offs.length);
+  let idx = 0;
+  const CONC = 8; // giới hạn đồng thời — nhanh mà không quá tải PostgREST
+  const worker = async () => {
+    while (idx < offs.length) {
+      const my = idx++;
+      const r = await fetch(`${REST}?${sel}&limit=${page}&offset=${offs[my]}`, { headers: H });
+      if (!r.ok) await fail(r);
+      pages[my] = await r.json();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(CONC, offs.length) }, worker));
+  for (const p of pages) out.push(...p); // giữ đúng thứ tự (order by collection,id + offset tăng dần)
   return out;
 }
 

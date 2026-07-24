@@ -1,5 +1,9 @@
 # Triển khai Studio lên VPS (CI/CD qua GitHub → GHCR → VPS)
 
+> ⚠️ **Bản này mô tả luồng CŨ** (`docker compose pull` + scp DB lên VPS). Kiến trúc đang chạy thật giờ là
+> **Coolify + Supabase-stateless** (không scp DB, VPS kéo DB từ Supabase lúc boot). Xem **[docs/DEPLOY-PLAYBOOK.md](docs/DEPLOY-PLAYBOOK.md)**
+> để có quy trình hiện hành + tối ưu tốc độ. Giữ file này làm tham chiếu biến thể compose thuần.
+
 Luồng: **push code lên GitHub → GitHub Actions build Docker image → đẩy lên GHCR → VPS kéo image về chạy.**
 DB (`data/studio.db`) nằm ở volume trên VPS, **không** nằm trong image → update code không đụng tới dữ liệu.
 
