@@ -165,7 +165,7 @@ function GeneralPanel({ me }: { me: User | null }) {
           <p className="flex items-center gap-1.5 text-sm font-semibold text-ink"><KeyRound size={16} className={data.hasKey ? "text-ok" : "text-warn"} aria-hidden />Kết nối OpenRouter (DeepSeek)</p>
           <span className="text-sm text-ink-2">
             {data.hasKey
-              ? <>Đang dùng <b>AI thật</b> · model <b>{data.model}</b> · key {data.keySource === "app" ? "lưu trong app" : "từ biến môi trường"} (…{data.keyTail})</>
+              ? <>Đang dùng <b>AI thật</b> · model <b>{data.model}</b> · key {data.keySource === "app" ? "lưu trong app" : "từ biến môi trường"}{data.keyTail ? <> (…{data.keyTail})</> : null}</>
               : <>Đang chạy <b>bộ soạn mô phỏng</b> — nội dung chỉ là khung. Dán API key để AI viết nội dung thật.</>}
           </span>
         </div>

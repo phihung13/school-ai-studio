@@ -318,9 +318,11 @@ export async function GET(req: NextRequest) {
       void _k; void _tp; void _tj;
       const k = aiKey(db);
       const tcfg = tutorConfig(db);
+      // keyTail (4 ký tự cuối) CHỈ cho quản trị — người khác dùng được AI nhưng KHÔNG xem key (kể cả phần đuôi).
+      const isAdmin = user.role === "admin";
       return NextResponse.json({
         settings: safeSettings, packPreview: instructionPack(db, sampleAtom, 2),
-        hasKey: hasAiKey(db), model: aiModel(db), keySource: aiKeySource(db), keyTail: k ? k.slice(-4) : "",
+        hasKey: hasAiKey(db), model: aiModel(db), keySource: aiKeySource(db), keyTail: k && isAdmin ? k.slice(-4) : "",
         tutor: { url: tcfg.url, email: tcfg.email || "", configured: tutorConfigured(db), hasPassword: !!db.settings.tutorPassword, hasJwt: !!db.settings.tutorJwt },
       });
     }
