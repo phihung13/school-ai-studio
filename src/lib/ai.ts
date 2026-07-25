@@ -133,17 +133,42 @@ export function knowledgeContract(db: DB, atom: TreeNode, pkg: Pkg): string {
 
 // ---------- Gọi LLM qua OpenRouter (chuẩn OpenAI) — khi có key ----------
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+// backoff luỹ thừa + jitter (tối đa 8s/lần). Mỗi request TỰ chờ bằng await → KHÔNG chặn event loop,
+// người khác vẫn được phục vụ song song trong lúc request này đang đợi.
+const backoffMs = (attempt: number) => Math.min(8000, 400 * 2 ** (attempt - 1)) + Math.floor(Math.random() * 250);
+
 async function llmChat(key: string, model: string, messages: { role: string; content: string }[], maxTokens: number, jsonMode = false): Promise<{ text: string; model: string }> {
   if (/[^\x00-\xFF]/.test(key)) throw new Error("Key chứa ký tự lạ (thường do bộ gõ tiếng Việt Telex/Unikey biến 'ee'→'ê'…) — xoá ô key, TẮT bộ gõ tiếng Việt rồi DÁN lại key sạch.");
-  const res = await fetch(OPENROUTER_URL, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "X-Title": "VA Studio" },
-    body: JSON.stringify({ model, max_tokens: maxTokens, messages, ...(jsonMode ? { response_format: { type: "json_object" } } : {}) }),
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`);
-  const data = (await res.json()) as { choices?: { message?: { content?: string } }[]; model?: string; error?: { message?: string } };
-  if (data.error) throw new Error(data.error.message || "OpenRouter trả lỗi");
-  return { text: data.choices?.[0]?.message?.content || "", model: data.model || model };
+  const body = JSON.stringify({ model, max_tokens: maxTokens, messages, ...(jsonMode ? { response_format: { type: "json_object" } } : {}) });
+  const MAX = 4; // 1 lần gọi + tối đa 3 lần thử lại khi provider quá tải/nghẽn (429/5xx) hoặc lỗi mạng
+  for (let attempt = 1; ; attempt++) {
+    let res: Response;
+    try {
+      res = await fetch(OPENROUTER_URL, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "X-Title": "VA Studio" },
+        body,
+      });
+    } catch (e) {
+      // lỗi mạng (đứt kết nối tới OpenRouter) → thử lại vài lần
+      if (attempt >= MAX) throw new Error(`Lỗi mạng khi gọi OpenRouter: ${e instanceof Error ? e.message : String(e)}`);
+      await sleep(backoffMs(attempt));
+      continue;
+    }
+    if (res.ok) {
+      const data = (await res.json()) as { choices?: { message?: { content?: string } }[]; model?: string; error?: { message?: string } };
+      if (data.error) throw new Error(data.error.message || "OpenRouter trả lỗi");
+      return { text: data.choices?.[0]?.message?.content || "", model: data.model || model };
+    }
+    // 429 = vượt tốc độ (nhiều lượt cùng lúc); 500/502/503/529 = provider nghẽn tạm thời → CHỜ rồi thử lại.
+    // Lỗi 4xx khác (401 sai key, 400 sai request) là lỗi thật → văng ngay, không thử lại.
+    const transient = res.status === 429 || res.status === 500 || res.status === 502 || res.status === 503 || res.status === 529;
+    const txt = (await res.text().catch(() => "")).slice(0, 300);
+    if (!transient || attempt >= MAX) throw new Error(`HTTP ${res.status}: ${txt}`);
+    const retryAfter = Number(res.headers.get("retry-after")) * 1000; // giây → ms (nếu provider gợi ý)
+    await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter, 10000) : backoffMs(attempt));
+  }
 }
 
 async function claudeJSON<T>(db: DB, system: string, prompt: string): Promise<T> {
