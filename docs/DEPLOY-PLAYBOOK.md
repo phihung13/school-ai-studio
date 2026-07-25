@@ -1,9 +1,10 @@
-# Playbook Deploy — Next.js → VPS qua CI/CD (Studio làm mẫu, Tutor học theo)
+# Playbook Deploy — Web app → VPS qua CI/CD (công thức chung, app nào cũng áp được)
 
-> Gói lại **đúng quy trình đang chạy thật** của Studio (`factory.vietanh.org`) để đội Tutor tái lập.
-> Kèm phần **tối ưu tốc độ** (đã áp cho Studio) và cách **điều chỉnh cho monorepo pnpm/turbo của Tutor**.
->
-> Tài liệu cũ `DEPLOY.md` mô tả biến thể `docker compose pull` + scp DB — **đã lỗi thời**. Đọc file này.
+> Công thức deploy **một app web (container) lên VPS tự động khi push code**, viết ở dạng **chung** —
+> thay placeholder `<...>` là dùng được cho mọi dự án (Next.js, Node, hay bất kỳ image nào).
+> Kèm phần **tối ưu tốc độ** và **các biến thể theo loại app** (monorepo, app đọc file runtime, app cần binary hệ thống).
+
+Placeholder dùng xuyên suốt: `<owner>/<repo>` (GitHub), `<your-domain>` (tên miền), `<APP_PORT>` (cổng app, ví dụ 3000).
 
 ---
 
@@ -12,192 +13,232 @@
 ```mermaid
 flowchart LR
   dev[Máy dev] -- git push --> gh[GitHub]
-  gh -- Actions: build image --> ghcr[(GHCR<br/>ghcr.io/owner/repo:latest)]
-  gh -- Actions: gọi API deploy --> cool[Coolify trên VPS]
-  cool -- docker pull :latest --> vps[Container app]
-  supa[(Supabase<br/>nguồn chân lý)] -- pull-db lúc BOOT --> vps
-  vps -- mirror lúc GHI --> supa
-  cf[Cloudflare] -- HTTPS/proxy --> vps
+  gh -- Actions: build image --> reg[(Container Registry<br/>vd GHCR :latest)]
+  gh -- Actions: gọi API deploy --> pm[Platform quản lý trên VPS<br/>vd Coolify]
+  pm -- docker pull :latest --> app[Container app]
+  db[(Store ngoài tuỳ chọn<br/>vd Postgres/Supabase)] -. nạp lúc boot .-> app
+  cf[Reverse proxy / CDN<br/>vd Cloudflare] -- HTTPS --> app
 ```
 
-**Nguyên tắc cốt lõi: VPS KHÔNG giữ trạng thái (stateless).**
-Dữ liệu thật nằm ở **Supabase** (bảng `studio_kv`). Container lúc **boot** kéo toàn bộ về dựng lại `studio.db`; lúc **ghi** thì mirror ngược lên Supabase. Nhờ đó:
-- Redeploy = thay container mới, **không mất gì**, không cần volume/seed DB.
-- Rớt VPS/đổi máy chủ → dựng lại từ Supabase trong vài giây.
-- Không SSH, không build trên VPS — Coolify chỉ **pull image** đã build sẵn.
+**Nguyên tắc vàng: container KHÔNG tự build trên VPS, KHÔNG giữ trạng thái sống-còn.**
+- CI **build sẵn** image, đẩy lên registry. VPS chỉ **pull + chạy** → deploy nhanh, VPS nhẹ.
+- State (DB/file) để ở **volume** hoặc **store ngoài**. Redeploy = thay container, **không mất dữ liệu**.
+- (Tuỳ chọn nâng cao) muốn VPS **stateless hoàn toàn**: để state ở DB ngoài, container **nạp lúc boot** — rớt máy/đổi VPS dựng lại trong vài giây (xem §6.4).
 
 ---
 
 ## 2. Các mảnh ghép & VÌ SAO
 
-| Mảnh | Vai trò | Vì sao chọn vậy |
+| Mảnh | Vai trò | Vì sao |
 |---|---|---|
 | **Dockerfile 2 tầng** (builder → runner) | Build xong bỏ devDeps, image runtime gọn | Tách cache: đổi source không cài lại deps |
-| **Node 24** | Chạy `node:sqlite` **không cần cờ** | Node 22 phải `--experimental-sqlite` |
-| **`scripts/pull-db.mjs`** (boot) | Supabase `studio_kv` → `data/studio.db` | Cho VPS stateless |
-| **`src/lib/kv-sync.ts`** (mirror) | Ghi thay đổi ngược lên `studio_kv` | Supabase luôn là bản bền |
-| **GHCR** | Kho image | Miễn phí theo repo, gắn liền GitHub |
-| **Coolify** (resource *Docker Image*) | Kéo `:latest` + chạy + healthcheck + domain | Không cần viết compose/SSH; có UI |
-| **Cloudflare** | HTTPS + proxy tên miền | Chứng chỉ tự động, ẩn IP gốc |
-| **GitHub Actions** | build+push image, rồi gọi Coolify API | 1 lần push = tự lên VPS |
+| **Container Registry** (GHCR/Docker Hub/GitLab) | Kho image | GHCR miễn phí gắn liền GitHub repo |
+| **Platform trên VPS** (Coolify/Dokploy/Portainer) | Pull image + chạy + healthcheck + domain + TLS | Không cần tự viết compose/SSH; có UI, có API deploy |
+| **CI** (GitHub Actions) | build+push image, rồi gọi API deploy | 1 push = tự lên VPS, không thao tác tay |
+| **Reverse proxy/CDN** (Cloudflare/Caddy) | HTTPS + tên miền + ẩn IP gốc | Chứng chỉ tự động |
 
-Điểm tinh tế của Studio (Tutor có thể KHÁC): app **đọc file lúc chạy** bằng `process.cwd()`
-(`src/lib/templates/*.typ`, `workers/podcast/*.mp3`, `node_modules/@marp-team/marp-cli`) nên **không**
-dùng được `output: "standalone"` — phải giữ trọn `node_modules` + `src`. Tutor nếu không có kiểu đọc file
-này thì **nên bật standalone** (mục 5) để image siêu gọn.
+> Vì sao **Coolify (resource kiểu "Docker Image")** thay vì "build from Git": để **CI build**, VPS chỉ pull.
+> Build trên VPS ăn CPU/RAM của chính máy chạy app và chậm. Tách ra → deploy = pull vài trăm MB là xong.
 
 ---
 
-## 3. Dựng lại từ số 0 (checklist)
+## 3. Dựng từ số 0 (checklist)
 
-### 3.1 GitHub — Secrets & Variables (Settings → Secrets and variables → Actions)
+### 3.1 Registry & CI secrets (GitHub → Settings → Secrets and variables → Actions)
 | Loại | Tên | Giá trị |
 |---|---|---|
-| Variable | `VPS_DEPLOY` | `true` (bật job gọi Coolify) |
-| Secret | `COOLIFY_URL` | vd `https://vps.truongvietanh.com` |
-| Secret | `COOLIFY_TOKEN` | API token tạo trong Coolify → Keys & Tokens |
-| Secret | `COOLIFY_APP_UUID` | UUID resource (trên URL trang resource trong Coolify) |
+| Variable | `DEPLOY_ON` | `true` (bật job gọi platform) |
+| Secret | `DEPLOY_HOOK_URL` | URL/endpoint deploy của platform (Coolify: `<platform-url>`) |
+| Secret | `DEPLOY_TOKEN` | API token của platform |
+| Secret | `DEPLOY_APP_ID` | ID/UUID app trên platform |
 
-`GITHUB_TOKEN` có sẵn — dùng đẩy image lên GHCR (workflow đã cấp `packages: write`).
+Đẩy image lên GHCR dùng `GITHUB_TOKEN` sẵn có (cấp `packages: write` trong workflow) — không cần secret riêng.
 
-### 3.2 Coolify (trên VPS)
-1. **+ New Resource → Docker Image** (KHÔNG phải "from Git" — ta pull image build sẵn).
-2. Image: `ghcr.io/<owner>/<repo>:latest`. Nếu package **Private** → thêm Registry Credential (PAT `read:packages`).
-3. **Environment variables** (đây là nơi cấu hình runtime, KHÔNG bake vào image):
-   - `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` → bật pull-db/mirror (thiếu → app chạy DB local, không đồng bộ).
-   - `PORT=3000` (khớp `EXPOSE`).
-   - *(khoá AI KHÔNG đặt ở đây — nhập trong app: Cài đặt → OpenRouter, lưu vào DB.)*
-4. **Ports/Domain**: gắn domain dạng `https://factory.vietanh.org` (có `https://` để Traefik sinh middleware đúng).
-5. **Healthcheck**: đã có trong Dockerfile (`/login`), `start-period` 40s cho kịp boot+pull-db.
+### 3.2 Platform trên VPS (ví dụ Coolify)
+1. **+ New Resource → Docker Image** (KHÔNG phải "from Git").
+2. Image: `ghcr.io/<owner>/<repo>:latest`. Registry Private → thêm Registry Credential (token quyền đọc packages).
+3. **Environment variables**: đặt cấu hình runtime ở ĐÂY (không bake secret vào image) — DB URL, khoá dịch vụ, `PORT=<APP_PORT>`.
+4. **Domain**: gắn `https://<your-domain>` (có `https://` để proxy sinh middleware đúng).
+5. **Healthcheck**: đã có trong Dockerfile (§4). `start-period` đủ dài cho app boot.
 
-### 3.3 Cloudflare
-- Bản ghi **A** `factory` → IP VPS, **Proxy = ON** (cam).
-- SSL/TLS mode **Full**. Lưu ý timeout Cloudflare **100s** — tác vụ dài (sinh video/podcast) nên chạy nền/tách request kẻo dính lỗi **524**.
+### 3.3 Tên miền + TLS (ví dụ Cloudflare)
+- Bản ghi **A** `<your-domain>` → IP VPS, **Proxy = ON**.
+- SSL/TLS mode **Full**. Lưu ý **timeout ~100s** của Cloudflare → tác vụ dài (báo cáo nặng, sinh media) nên **chạy nền/tách request** kẻo dính lỗi **524**.
 
 ### 3.4 Lần đầu
-Push nhánh `main`/`master` → tab **Actions** chạy `build-and-deploy` → image lên GHCR → job `deploy` gọi Coolify → Coolify pull & chạy. Mở domain, đăng nhập, vào Cài đặt dán key OpenRouter.
+Push nhánh chính → tab **Actions** build → image lên registry → job deploy gọi platform → platform pull & chạy. Mở `https://<your-domain>`.
 
 ---
 
-## 4. ⭐ TỐI ƯU TỐC ĐỘ (bài học chính — đã áp cho Studio)
+## 4. File mẫu (copy-paste, thay placeholder)
 
-Chia 3 mặt trận: **build CI**, **pull về VPS**, **boot**. Cộng lại quyết định "push xong bao lâu thì lên".
-
-### 4.1 Tách layer `node_modules` khỏi code *(đã làm)*
-**Vấn đề:** `COPY /app /app` gộp `node_modules` (vài trăm MB, hiếm đổi) chung 1 layer với `.next`/`src`
-(đổi mỗi lần). Source đổi → digest layer đổi → VPS **pull lại cả node_modules** mỗi deploy.
-**Cách:** copy tách theo tần suất đổi, `node_modules` đứng riêng:
+### `Dockerfile` — 2 tầng, tách layer, healthcheck
 ```dockerfile
-COPY --from=builder /app/node_modules ./node_modules   # layer bền → deploy sau TÁI DÙNG, không pull lại
+# syntax=docker/dockerfile:1
+ARG NODE_IMAGE=node:24-bookworm-slim
+
+# ── build ──
+FROM ${NODE_IMAGE} AS builder
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci                         # layer này chỉ chạy lại khi lock đổi
+COPY . .
+RUN npm run build \
+ && rm -rf .next/cache \           # build-cache vô dụng lúc chạy → bỏ khỏi image
+ && npm prune --omit=dev           # cắt devDeps cho runtime gọn
+
+# ── runtime ──
+FROM ${NODE_IMAGE} AS runner
+WORKDIR /app
+ENV NODE_ENV=production PORT=<APP_PORT>
+# (Nếu app cần binary hệ thống — chromium, ffmpeg… — cài ở đây, xem §6.3)
+
+# Copy TÁCH LAYER theo tần suất đổi → deploy incremental chỉ pull layer đã đổi:
+COPY --from=builder /app/node_modules ./node_modules   # nặng, hiếm đổi → VPS TÁI DÙNG
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/src ./src
-COPY --from=builder /app/scripts ./scripts
-COPY --from=builder /app/workers ./workers
-COPY --from=builder /app/package.json /app/next.config.ts ./
-```
-**Lợi:** deploy chỉ-đổi-code → VPS chỉ pull `.next`+`src` (nhỏ), bỏ qua `node_modules`. Nhanh hơn nhiều lần.
-**Bẫy:** phải copy ĐÚNG mọi thứ runtime cần. Quét trước bằng `grep -rn "process.cwd()" src` để không sót.
+COPY --from=builder /app/package.json ./
+# (chỉ copy thêm thứ RUNTIME thật cần — quét trước: grep -rn "process.cwd()" src)
 
-### 4.2 Bỏ `.next/cache` khỏi image *(đã làm)*
-Build-cache của Turbopack (hàng trăm MB) **vô dụng lúc `next start`**. Cắt ngay sau build:
-```dockerfile
-RUN npm run build && rm -rf .next/cache && npm prune --omit=dev
+EXPOSE <APP_PORT>
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||<APP_PORT>)+'/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["npm", "run", "start"]
 ```
-**Lợi:** image nhẹ đi đáng kể → pull nhanh + đỡ tốn dung lượng GHCR/VPS.
 
-### 4.3 `provenance:false` + 1 kiến trúc *(đã làm)*
+### `.github/workflows/deploy.yml`
 ```yaml
-platforms: linux/amd64   # VPS amd64 — tránh lỡ build đa-arch (emulate) rất chậm
-provenance: false        # bỏ SLSA attestation → manifest ĐƠN, Coolify/docker pull gọn
-```
-Mặc định `build-push-action` bật provenance → sinh **manifest list** kèm attestation, pull rườm rà.
+name: build-and-deploy
+on:
+  push: { branches: [main, master] }
+  workflow_dispatch: {}
+concurrency: { group: deploy-${{ github.ref }}, cancel-in-progress: true }
 
-### 4.4 Docker layer cache trên CI *(đã có)*
-```yaml
-cache-from: type=gha
-cache-to: type=gha,mode=max
-```
-Layer nặng (apt cài chromium/ffmpeg/typst, `npm ci`) chỉ chạy lại khi Dockerfile/lock đổi. `mode=max` cache cả layer trung gian.
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, packages: write }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with: { registry: ghcr.io, username: ${{ github.actor }}, password: ${{ secrets.GITHUB_TOKEN }} }
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest
+            type=sha,format=long
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64      # chốt 1 kiến trúc (VPS amd64) — tránh build đa-arch chậm
+          provenance: false           # manifest ĐƠN → pull gọn
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha        # cache layer giữa các lần build
+          cache-to: type=gha,mode=max
 
-### 4.5 `pull-db` bắn SONG SONG *(đã làm)*
-**Vấn đề:** boot kéo 34.917 dòng = ~35 trang REST **tuần tự** tới `ap-southeast-1` → cộng dồn nhiều giây, mỗi lần khởi động container.
-**Cách:** lấy tổng số dòng qua `Prefer: count=exact` (header `Content-Range`), rồi bắn các trang còn lại song song (pool 8):
-```js
-const first = await fetch(`${REST}?${sel}&limit=1000&offset=0`, { headers: { ...H, Prefer: "count=exact" } });
-const total = Number(first.headers.get("content-range")?.split("/")[1]);
-// tính offset còn lại → Promise.all với concurrency 8, ghép theo thứ tự
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: ${{ vars.DEPLOY_ON == 'true' }}
+    steps:
+      - run: |
+          curl -fsS -X POST \
+            "${{ secrets.DEPLOY_HOOK_URL }}/api/v1/deploy?uuid=${{ secrets.DEPLOY_APP_ID }}&force=true" \
+            -H "Authorization: Bearer ${{ secrets.DEPLOY_TOKEN }}"
 ```
-**Lợi:** boot nhanh hơn nhiều lần = giảm downtime mỗi redeploy.
 
-### 4.6 (Nâng cao) Base image dựng sẵn — *khuyến nghị cho Tutor, Studio làm sau khi test staging*
-Layer apt (chromium/ffmpeg/typst/python) hiếm đổi nhưng nặng. Tách ra **1 image nền** build 1 lần, đẩy GHCR:
-```dockerfile
-# Dockerfile.base → ghcr.io/<owner>/studio-base:1
-FROM node:24-bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends chromium ffmpeg python3 ... && ...
+### `.dockerignore`
 ```
-App Dockerfile: `FROM ghcr.io/<owner>/studio-base:1 AS runner`. CI app **bỏ hẳn** bước cài nặng → build ngắn hẳn. Đổi bộ binary mới bump tag base.
+node_modules
+.next
+out
+data                # state runtime — không bake vào image
+.env
+.env.*
+.git
+.github
+*.md
+.DS_Store
+Thumbs.db
+```
 
 ---
 
-## 5. Áp cho TUTOR (monorepo pnpm + turbo)
+## 5. ⭐ TỐI ƯU TỐC ĐỘ
 
-Khác Studio (npm, 1 app). Điều chỉnh:
+3 mặt trận: **build CI · pull về VPS · boot**. Cộng lại = "push xong bao lâu thì lên".
 
-### 5.1 Bật Next **standalone** — đòn lớn nhất
-Nếu app Tutor **không** đọc file runtime kiểu Studio, thêm vào `next.config`:
-```ts
-const nextConfig = { output: "standalone" };
-```
-→ `next build` gói sẵn `.next/standalone` (chỉ deps thực sự dùng, đã tree-shake) + tự chạy `node server.js`.
-Dockerfile runner chỉ cần **3 dòng copy**, image gọn còn ~1/5:
+| # | Đòn | Vấn đề | Cách | Lợi |
+|---|---|---|---|---|
+| 1 | **Tách layer `node_modules`** | Gộp deps (nặng, hiếm đổi) chung code → deploy nào cũng pull lại vài trăm MB | Copy `node_modules` thành layer RIÊNG, trước code (§4) | Đổi-code → VPS tái dùng layer deps, chỉ pull phần nhỏ |
+| 2 | **Bỏ build-cache khỏi image** | `.next/cache` (Turbopack/webpack) hàng trăm MB, vô dụng runtime | `rm -rf .next/cache` sau build | Image nhẹ → pull nhanh |
+| 3 | **Copy có chọn lọc** | `COPY /app /app` gói cả rác (docs, config dev) | Chỉ copy thứ runtime cần (quét `process.cwd()`) | Image gọn thêm |
+| 4 | **`provenance:false` + 1 kiến trúc** | Mặc định sinh manifest-list + attestation → pull rườm rà | `provenance:false`, `platforms:linux/amd64` | Manifest đơn, pull gọn |
+| 5 | **Docker layer cache CI** | Cài deps/apt chạy lại mỗi build | `cache-from/to: type=gha,mode=max` | Layer nặng chỉ chạy lại khi đổi thật |
+| 6 | **Base image dựng sẵn** *(nếu app cần binary nặng)* | Layer apt (chromium/ffmpeg…) nặng, hiếm đổi nhưng build lại tốn | Build 1 `Dockerfile.base` đẩy registry; app `FROM <base>` | CI app bỏ hẳn bước cài nặng |
+| 7 | **Boot nạp DB song song** *(nếu dùng stateless §6.4)* | Kéo nhiều trang tuần tự lúc boot | Lấy tổng số (count) rồi bắn song song (pool ~8) | Boot nhanh nhiều lần |
+
+> **Đòn số 1 áp dụng cho MỌI app** và thường lãi nhất cho deploy hằng ngày (chỉ code đổi, deps thì không).
+
+---
+
+## 6. Biến thể theo loại app
+
+### 6.1 Next.js **standalone** — đòn lớn nhất nếu app KHÔNG đọc file runtime
+Thêm `output: "standalone"` vào `next.config` → build gói sẵn deps thực dùng (đã tree-shake) + `server.js`. Runner chỉ 3 dòng copy, image gọn còn ~1/5:
 ```dockerfile
-COPY --from=builder /app/apps/web/.next/standalone ./
-COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
-COPY --from=builder /app/apps/web/public ./apps/web/public
-CMD ["node", "apps/web/server.js"]
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
+CMD ["node", "server.js"]
 ```
+> **KHÔNG dùng standalone** nếu app đọc file lúc chạy bằng `process.cwd()` (template, asset, binary trong node_modules) — tracing sẽ bỏ sót. Khi đó giữ cách tách-layer ở §4.
 
-### 5.2 pnpm — cài nhanh & cache chuẩn
+### 6.2 Monorepo (pnpm + turbo)
 ```dockerfile
-# corepack có sẵn trong node:24
 RUN corepack enable
 COPY pnpm-lock.yaml package.json pnpm-workspace.yaml ./
-COPY apps/web/package.json apps/web/
-# cache store pnpm giữa các lần build
+COPY <app>/package.json <app>/
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile --filter web...
+    pnpm install --frozen-lockfile --filter <app>...   # chỉ deps của app cần
 COPY . .
-RUN pnpm --filter web build
+RUN pnpm --filter <app> build
 ```
-`--filter web...` chỉ cài deps của app web + phụ thuộc workspace của nó, bỏ app khác.
+- `--filter <app>...` bỏ qua app/package khác trong workspace.
+- **turbo remote cache** (Vercel free hoặc tự host S3/R2): CI lần sau tải kết quả cache, bỏ qua build package không đổi → **đòn tăng tốc CI mạnh nhất cho monorepo**.
 
-### 5.3 turbo — chỉ build phần đổi
-- `turbo build --filter=web` để chạy đúng task cần.
-- Bật **remote cache** (Vercel free hoặc tự host `turbo` cache trên S3/R2): CI lần sau **tải kết quả cache**, bỏ qua build package không đổi. Đây là đòn tăng tốc CI mạnh nhất cho monorepo.
+### 6.3 App cần binary hệ thống (chromium, ffmpeg, typst…)
+Cài ở tầng runner. Nếu nặng và hiếm đổi → tách **base image** (§5 đòn 6): build 1 lần, đẩy registry, app `FROM <base>` → CI app không cài lại mỗi lần.
 
-### 5.4 Những thứ dùng CHUNG với Studio
-Áp y hệt mục 4: layer cache `type=gha`, `provenance:false`, tách `node_modules`/standalone, `platforms: linux/amd64`, Coolify *Docker Image* + env runtime, Cloudflare proxy + lưu ý 524.
+### 6.4 VPS stateless qua DB ngoài (tuỳ chọn nâng cao)
+Để state ở DB ngoài (Postgres/Supabase). Container **boot** kéo về dựng DB local; **ghi** thì mirror ngược lên (gated bằng env — thiếu env thì chạy DB local như thường). Script boot chạy trước lệnh start:
+```dockerfile
+CMD ["sh", "-c", "node scripts/pull-state.mjs && npm run start"]
+```
+Nạp nhiều dòng → **song song hoá** (lấy tổng qua `count`, bắn các trang bằng pool ~8) để boot nhanh (§5 đòn 7).
 
 ---
 
-## 6. Vận hành & sự cố nhanh
+## 7. Vận hành & sự cố nhanh
 
 | Triệu chứng | Xử lý |
 |---|---|
-| Push xong không thấy deploy | `VPS_DEPLOY` chưa `true`, hoặc thiếu 3 secret Coolify. Xem log job `deploy`. |
-| Coolify "no available server" | Domain thiếu `https://` → middleware Traefik sai. Sửa thành `https://<domain>`. |
-| Tác vụ dài lỗi `524`/`<!DOCTYPE` | Cloudflare timeout 100s. Chạy nền hoặc tách request. |
-| App rỗng dữ liệu | Thiếu `SUPABASE_URL`/`SUPABASE_SERVICE_KEY` → pull-db bỏ qua. Kiểm env Coolify. |
-| `node:sqlite` đòi cờ | Image không phải Node ≥ 23. Dùng `node:24-*`. |
-| `docker pull ... denied` | Package Private, Coolify thiếu Registry Credential (PAT `read:packages`). |
+| Push xong không deploy | `DEPLOY_ON` chưa `true`, hoặc thiếu secret platform. Xem log job `deploy`. |
+| Proxy "no available server" | Domain thiếu `https://` → middleware sai. Sửa thành `https://<your-domain>`. |
+| Tác vụ dài lỗi `524` | CDN timeout (~100s). Chạy nền hoặc tách request. |
+| `docker pull ... denied` | Registry Private, platform thiếu credential đọc packages. |
+| Image quá nặng, pull lâu | Áp §5 (tách layer, bỏ cache, standalone nếu được). |
+| Deps cài lại mỗi CI | Đảm bảo copy lockfile TRƯỚC source; bật `cache-from/to`. |
 
 ---
 
-## 7. Tóm tắt file liên quan (Studio)
-- `Dockerfile` — 2 tầng, Node 24, binary nặng, tách layer, healthcheck, `tini`.
-- `.dockerignore` — chặn `node_modules`/`.next`/`data`/`*.exe`/secrets khỏi build context.
-- `.github/workflows/deploy.yml` — build+push GHCR, cache gha, job `deploy` gọi Coolify API.
-- `scripts/pull-db.mjs` — boot: Supabase → `studio.db` (song song).
-- `src/lib/kv-sync.ts` — mirror: ghi → Supabase `studio_kv` (gated bằng env).
+## 8. Tóm tắt "công thức tối thiểu"
+1. `Dockerfile` 2 tầng + tách layer + healthcheck (§4).
+2. Workflow build→push GHCR + job deploy gọi platform (§4).
+3. Platform kiểu **Docker Image** pull `:latest`, env runtime, domain HTTPS (§3).
+4. Áp §5 đòn 1–5 cho mọi app; thêm 6–7 nếu app nặng/stateless.
+5. State ở volume hoặc DB ngoài — **không bao giờ** bake vào image.
