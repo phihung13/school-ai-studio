@@ -6,9 +6,9 @@ import Shell from "@/components/shell";
 import { getData, PageLoading, Card } from "@/components/ui";
 import { User, Cover3, COVER3_LABEL, COVER3_HEX } from "@/lib/shared";
 
-interface GradeCell { id: string; grade: number | null; cover: Cover3; atoms: number; edges: number; verified: number }
-interface SubjRow { id: string; title: string; grades: GradeCell[]; atoms: number; edges: number; cover: Cover3 }
-interface MapData { subjects: SubjRow[]; gradeCols: number[]; totals: { subjects: number; withData: number; atoms: number; edges: number; greenCells: number } }
+interface GradeCell { id: string; grade: number | null; cover: Cover3; atoms: number; edges: number; verified: number; questions: number; ladders: number; atomsWithQ: number; atomsWithL: number }
+interface SubjRow { id: string; title: string; grades: GradeCell[]; atoms: number; edges: number; questions: number; ladders: number; cover: Cover3 }
+interface MapData { subjects: SubjRow[]; gradeCols: number[]; totals: { subjects: number; withData: number; atoms: number; edges: number; questions: number; ladders: number; greenCells: number } }
 
 function Tile({ cell }: { cell: GradeCell | null }) {
   if (!cell || cell.cover === "empty") {
@@ -22,7 +22,7 @@ function Tile({ cell }: { cell: GradeCell | null }) {
   const hex = COVER3_HEX[cell.cover];
   const href = cell.cover === "full" ? `/graph?node=${cell.id}` : `/tree?node=${cell.id}`;
   return (
-    <Link href={href} title={`${cell.atoms} nguyên tử · ${cell.edges} cạnh · ${cell.verified} đã thẩm định — ${COVER3_LABEL[cell.cover]}`}
+    <Link href={href} title={`${cell.atoms} nguyên tử · ${cell.edges} cạnh · ${cell.verified} đã thẩm định · ${cell.questions} câu hỏi (${cell.atomsWithQ} nt) · ${cell.ladders} thang Socratic (${cell.atomsWithL} nt) — ${COVER3_LABEL[cell.cover]}`}
       className="flex h-14 w-full flex-col items-center justify-center rounded-lg border transition hover:shadow-md"
       style={{ background: hex + "1c", borderColor: hex + "88" }}>
       <span className="font-display text-base font-bold leading-none" style={{ color: hex }}>{cell.atoms}</span>
@@ -47,7 +47,9 @@ export default function HomePage() {
   const stat = [
     { icon: Atom, label: "Nguyên tử đã nạp", value: t.atoms.toLocaleString("vi-VN"), tone: "text-brand" },
     { icon: Share2, label: "Cạnh nối tri thức", value: t.edges.toLocaleString("vi-VN"), tone: "text-info" },
-    { icon: Grid3x3, label: "Môn có dữ liệu", value: `${t.withData}/${t.subjects}`, tone: "text-brass-ink" },
+    { icon: Grid3x3, label: "Câu hỏi", value: t.questions.toLocaleString("vi-VN"), tone: "text-brass-ink" },
+    { icon: Waypoints, label: "Thang Socratic", value: t.ladders.toLocaleString("vi-VN"), tone: "text-warn" },
+    { icon: Grid3x3, label: "Môn có dữ liệu", value: `${t.withData}/${t.subjects}`, tone: "text-muted" },
     { icon: Waypoints, label: "Ô sẵn đồ thị", value: String(t.greenCells), tone: "text-ok" },
   ];
 

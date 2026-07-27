@@ -124,26 +124,37 @@ export async function GET(req: NextRequest) {
       const byParent = new Map<string | null, typeof db.tree>();
       for (const n of db.tree) { const arr = byParent.get(n.parentId); if (arr) arr.push(n); else byParent.set(n.parentId, [n]); }
       const verById = new Set(db.tree.filter((n) => n.kind === "atom" && n.verified).map((n) => n.id));
+      // Câu hỏi (Trạm 3) + thang Socratic (Trạm 4) theo nguyên tử — để ô heatmap nói được cả hai trạm này.
+      const qN = new Map<string, number>(); for (const q of db.questions) qN.set(q.atomId, (qN.get(q.atomId) ?? 0) + 1);
+      const lN = new Map<string, number>(); for (const l of db.ladders ?? []) lN.set(l.atomId, (lN.get(l.atomId) ?? 0) + 1);
       const gradeCover = (gid: string) => {
         const ids = new Set<string>();
         const stack = [gid];
         while (stack.length) { const cur = stack.pop()!; for (const c of byParent.get(cur) ?? []) { if (c.kind === "atom") ids.add(c.id); else stack.push(c.id); } }
-        if (!ids.size) return { cover: "empty", atoms: 0, edges: 0, verified: 0 };
+        if (!ids.size) return { cover: "empty", atoms: 0, edges: 0, verified: 0, questions: 0, ladders: 0, atomsWithQ: 0, atomsWithL: 0 };
         let edges = 0; for (const e of db.edges) if (ids.has(e.from) && ids.has(e.to)) edges++;
-        let verified = 0; for (const id of ids) if (verById.has(id)) verified++;
-        return { cover: edges > 0 ? "full" : "partial", atoms: ids.size, edges, verified };
+        let verified = 0, questions = 0, ladders = 0, atomsWithQ = 0, atomsWithL = 0;
+        for (const id of ids) {
+          if (verById.has(id)) verified++;
+          const q = qN.get(id); if (q) { questions += q; atomsWithQ++; }
+          const l = lN.get(id); if (l) { ladders += l; atomsWithL++; }
+        }
+        return { cover: edges > 0 ? "full" : "partial", atoms: ids.size, edges, verified, questions, ladders, atomsWithQ, atomsWithL };
       };
       const subjects = (byParent.get(null) ?? []).filter((n) => n.kind === "subject").map((s) => {
         const grades = children(db, s.id).filter((g) => g.kind === "grade").map((g) => ({ id: g.id, grade: g.grade ?? null, ...gradeCover(g.id) }));
         const atoms = grades.reduce((x, g) => x + g.atoms, 0), edges = grades.reduce((x, g) => x + g.edges, 0);
+        const questions = grades.reduce((x, g) => x + g.questions, 0), ladders = grades.reduce((x, g) => x + g.ladders, 0);
         const cover = atoms === 0 ? "empty" : grades.some((g) => g.cover === "full") ? "partial" : "partial";
-        return { id: s.id, title: s.title, grades, atoms, edges, cover: atoms === 0 ? "empty" : cover };
+        return { id: s.id, title: s.title, grades, atoms, edges, questions, ladders, cover: atoms === 0 ? "empty" : cover };
       });
       const gradeCols = [...new Set(subjects.flatMap((s) => s.grades.map((g) => g.grade).filter((x): x is number => x != null)))].sort((a, b) => a - b);
       const totals = {
         subjects: subjects.length,
         withData: subjects.filter((s) => s.atoms > 0).length,
         atoms: subjects.reduce((x, s) => x + s.atoms, 0),
+        questions: subjects.reduce((x, s) => x + s.questions, 0),
+        ladders: subjects.reduce((x, s) => x + s.ladders, 0),
         edges: subjects.reduce((x, s) => x + s.edges, 0),
         cells: subjects.flatMap((s) => s.grades),
         greenCells: subjects.flatMap((s) => s.grades).filter((g) => g.cover === "full").length,
