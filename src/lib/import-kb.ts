@@ -236,7 +236,7 @@ const str = (o: Record<string, unknown>, ...keys: string[]): string => {
 function rungsFromFlat(o: Record<string, unknown>): LadderRung[] {
   const out: LadderRung[] = [];
   for (let i = 1; i <= 4; i++) {
-    const key = Object.keys(o).find((k) => new RegExp(`^bac_?${i}(_|$)`, "i").test(k));
+    const key = Object.keys(o).find((k) => new RegExp(`^(bac|rung)_?${i}(_|$)`, "i").test(k));
     const cauHoi = key ? txt(o[key]) : "";
     if (cauHoi) out.push({ bac: i, loai: RUNG_LABEL[i - 1], cauHoi });
   }
