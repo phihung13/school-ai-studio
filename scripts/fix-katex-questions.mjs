@@ -109,7 +109,9 @@ for (const [id, p, find, replace] of EDITS) (EDIT_MAP[id] ||= []).push([p, find,
 function fixOne(id, fieldPath, value) {
   if (typeof value !== "string" || !value) return value;
   let v = value;
-  for (const [p, find, replace] of EDIT_MAP[id] || []) if (p === fieldPath && v.includes(find)) v = v.split(find).join(replace);
+  // Guard IDEMPOTENT: bỏ qua edit nếu chuỗi ĐÍCH đã có mặt — vài `find` vẫn khớp bên trong chính bản đã vá
+  // (vd Q-0000897 `|a-\bar{a}|` nằm trong `$|a-\bar{a}|$` → chạy lần 2 sẽ bọc thành `$$…$$`).
+  for (const [p, find, replace] of EDIT_MAP[id] || []) if (p === fieldPath && !v.includes(replace) && v.includes(find)) v = v.split(find).join(replace);
   return wrapBareBraces(fixMacron(bakeBlankInDelims(v)));   // regex idempotent + bọc ngoặc
 }
 export function fixQuestion(q) {
@@ -198,5 +200,65 @@ async function writeKv() {
     : `✗ Ghi lỗi ${w.status}: ${(await w.text()).slice(0, 300)}`);
 }
 
-if (process.argv.includes("--write-kv")) await writeKv();
+// ── WRITE bảng `questions` của KG store (Tutor đọc) ─────────────────────────
+// Schema (inspect 27/07): id, atom_id, noi_dung, key, tier, dok, do_kho, dap_an, loi_giai, tham_so_hoa, nhieu(jsonb).
+// nhieu[] dùng CÙNG khoá noiDung/lyDo như Studio → map thẳng. PATCH từng dòng (chỉ 4 cột nội dung, không đụng cột khác).
+async function writeQuestions() {
+  const BASE = process.env.SUPABASE_URL?.replace(/\/+$/, ""), KEY = process.env.SUPABASE_SERVICE_KEY;
+  if (!BASE || !KEY) { console.error("Cần SUPABASE_URL + SUPABASE_SERVICE_KEY (project jhqdzrejpcvasbsnamer)"); process.exit(1); }
+  const REST = `${BASE}/rest/v1/questions`, H = { apikey: KEY, Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" };
+  const ids = idsFromCsv();
+  const res = await fetch(`${REST}?id=in.(${ids.map(i => `"${i}"`).join(",")})&select=id,noi_dung,dap_an,loi_giai,nhieu`, { headers: H });
+  if (!res.ok) { console.error("GET questions lỗi", res.status, (await res.text()).slice(0, 300)); process.exit(1); }
+  const rows = await res.json();
+  const missing = ids.filter(id => !rows.some(r => r.id === id));
+  if (missing.length) console.log("THIẾU trong bảng questions:", missing.join(", "));
+  const patches = []; let changedFields = 0, failFields = 0;
+  for (const r of rows) {
+    const { q: fixed, changed } = fixQuestion({ id: r.id, noiDung: r.noi_dung, dapAn: r.dap_an, loiGiai: r.loi_giai, nhieu: r.nhieu });
+    if (!changed.length) continue;
+    for (const p of validateQ(fixed)) { failFields++; console.log(`✗ ${r.id}: ${p}`); }
+    changedFields += changed.length;
+    patches.push([r.id, { noi_dung: fixed.noiDung, dap_an: fixed.dapAn, loi_giai: fixed.loiGiai, nhieu: fixed.nhieu }]);
+  }
+  if (failFields) { console.error(`DỪNG: còn ${failFields} field hỏng sau vá — KHÔNG ghi.`); process.exit(1); }
+  console.log(`Chuẩn bị PATCH ${patches.length} câu (${changedFields} trường đổi).`);
+  if (!process.argv.includes("--yes")) { console.log("Thêm --yes để GHI thật."); return; }
+  let ok = 0, err = 0;
+  for (const [id, body] of patches) {
+    const w = await fetch(`${REST}?id=eq.${id}`, { method: "PATCH", headers: H, body: JSON.stringify(body) });
+    if (w.ok) ok++; else { err++; console.log(`✗ ${id} ${w.status}: ${(await w.text()).slice(0, 200)}`); }
+  }
+  console.log(`${err ? "✗" : "✓"} questions: ${ok} câu ghi xong, ${err} lỗi.`);
+}
+
+// ── WRITE data/studio.db local ──────────────────────────────────────────────
+// VÌ SAO cần: máy dev cũng bật kv-sync (có .env.local) → studio.db local CŨ mà persist() chạm 67 câu này sẽ ĐẨY
+// NGƯỢC bản hỏng lên studio_kv, đè mất bản vá. Vá luôn db local cho hai bên khớp.
+// ⚠ TẮT dev server trước khi chạy (mở studio.db bằng node lúc dev đang chạy → trôi data).
+function writeDb() {
+  const dbFile = path.resolve(process.env.STUDIO_DB || "data/studio.db");
+  const db = new DatabaseSync(dbFile);
+  const ids = idsFromCsv();
+  const rows = db.prepare("SELECT id,j FROM questions WHERE id IN (" + ids.map(() => "?").join(",") + ")").all(...ids);
+  const upd = db.prepare("UPDATE questions SET j=? WHERE id=?");
+  let changedFields = 0, failFields = 0, n = 0;
+  const jobs = [];
+  for (const r of rows) {
+    const { q: fixed, changed } = fixQuestion(JSON.parse(r.j));
+    if (!changed.length) continue;
+    for (const p of validateQ(fixed)) { failFields++; console.log(`✗ ${r.id}: ${p}`); }
+    changedFields += changed.length; jobs.push([JSON.stringify(fixed), r.id]);
+  }
+  if (failFields) { console.error(`DỪNG: còn ${failFields} field hỏng sau vá — KHÔNG ghi.`); process.exit(1); }
+  console.log(`Chuẩn bị UPDATE ${jobs.length} câu (${changedFields} trường đổi) trong ${dbFile}.`);
+  if (!process.argv.includes("--yes")) { console.log("Thêm --yes để GHI thật."); db.close(); return; }
+  for (const [j, id] of jobs) { upd.run(j, id); n++; }
+  db.close();
+  console.log(`✓ studio.db: ${n} câu ghi xong.`);
+}
+
+if (process.argv.includes("--write-db")) writeDb();
+else if (process.argv.includes("--write-kv")) await writeKv();
+else if (process.argv.includes("--write-questions")) await writeQuestions();
 else await dryRun();

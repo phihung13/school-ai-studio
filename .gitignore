@@ -54,3 +54,6 @@ next-env.d.ts
 # bộ bàn giao tutor (ngân hàng đề KÈM ĐÁP ÁN) — đã giao qua import, KHÔNG đưa lên repo public
 /data/tutor-bundles/
 # vẫn commit: /data/migration/id_map.frozen.json + /data/migration/*.md
+
+# kết quả dry-run của scripts/fix-katex-questions.mjs (sinh lại được, không cần commit)
+/katex-changes.json
