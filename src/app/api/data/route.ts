@@ -247,6 +247,12 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ subjects, jobs: db.jobs.slice(0, 20), formats: FORMATS, budget: db.settings.monthlyBudgetUsd, spentUsd });
     }
     case "dashboard": {
+      // Câu hỏi (Trạm 3) và thang Socratic (Trạm 4) đếm theo nguyên tử — trước đây dashboard KHÔNG đếm
+      // hai thứ này nên nạp kho về bao nhiêu cũng không thấy số nào nhích.
+      const qByAtom = new Map<string, number>();
+      for (const q of db.questions) qByAtom.set(q.atomId, (qByAtom.get(q.atomId) ?? 0) + 1);
+      const lByAtom = new Map<string, number>();
+      for (const l of db.ladders ?? []) lByAtom.set(l.atomId, (lByAtom.get(l.atomId) ?? 0) + 1);
       const subjects = db.tree.filter((n) => n.kind === "subject").map((s) => {
         // Con trực tiếp của Môn giờ là các Lớp → bảng chi tiết theo Lớp.
         const grades = children(db, s.id).filter((g) => g.kind === "grade");
@@ -259,6 +265,10 @@ export async function GET(req: NextRequest) {
             approved: pkgs.filter((p) => p.status === "approved").length,
             pending: pkgs.filter((p) => p.status === "pending_review").length,
             drafted: pkgs.length, total: gAtoms.length * 3,
+            questionCount: gAtoms.reduce((n, a) => n + (qByAtom.get(a.id) ?? 0), 0),
+            ladderCount: gAtoms.reduce((n, a) => n + (lByAtom.get(a.id) ?? 0), 0),
+            atomsWithQ: gAtoms.filter((a) => qByAtom.has(a.id)).length,
+            atomsWithL: gAtoms.filter((a) => lByAtom.has(a.id)).length,
           };
         });
         return { ...s, stats: subjectStats(db, s.id), chapters };
@@ -267,7 +277,7 @@ export async function GET(req: NextRequest) {
       const byFormat = FORMATS.map((f) => ({ format: f, ready: assets.filter((a) => a.format === f && a.status === "ready").length, outdated: assets.filter((a) => a.format === f && a.status === "outdated").length }));
       const tokens = assets.reduce((s, a) => s + a.tokens, 0) + db.jobs.reduce((s, j) => s + j.tokens, 0);
       const spentUsd = +(assets.reduce((s, a) => s + a.costUsd, 0) + db.jobs.reduce((s, j) => s + j.costUsd, 0)).toFixed(2);
-      return NextResponse.json({ subjects, byFormat, tokens, spentUsd, budget: db.settings.monthlyBudgetUsd, activity: db.activity.slice(0, 25), reviews: db.reviews.length, jobs: db.jobs.length });
+      return NextResponse.json({ subjects, byFormat, tokens, spentUsd, budget: db.settings.monthlyBudgetUsd, activity: db.activity.slice(0, 25), reviews: db.reviews.length, jobs: db.jobs.length, questionCount: db.questions.length, ladderCount: (db.ladders ?? []).length, atomsWithQ: qByAtom.size, atomsWithL: lByAtom.size });
     }
     case "library": {
       const q = (req.nextUrl.searchParams.get("q") || "").toLowerCase();

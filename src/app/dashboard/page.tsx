@@ -6,12 +6,13 @@ import Shell from "@/components/shell";
 import { getData, Card, PageLoading, Progress, FormatIcon, Empty, timeAgo, cls } from "@/components/ui";
 import { TreeNode, Activity, User, AssetFormat, FORMAT_LABEL } from "@/lib/shared";
 
-interface Chapter { id: string; title: string; atomCount: number; approved: number; pending: number; drafted: number; total: number }
+interface Chapter { id: string; title: string; atomCount: number; approved: number; pending: number; drafted: number; total: number; questionCount: number; ladderCount: number; atomsWithQ: number; atomsWithL: number }
 interface SubjectStats { atomCount: number; totalPkgs: number; drafted: number; draft_ai: number; edited: number; pending: number; approved: number; assetsReady: number; assetsOutdated: number; coveragePct: number; draftPct: number }
 interface DashData {
   subjects: (TreeNode & { stats: SubjectStats; chapters: Chapter[] })[];
   byFormat: { format: AssetFormat; ready: number; outdated: number }[];
   tokens: number; spentUsd: number; budget: number; activity: Activity[]; reviews: number; jobs: number;
+  questionCount: number; ladderCount: number; atomsWithQ: number; atomsWithL: number;
 }
 
 export default function DashboardPage() {
@@ -47,6 +48,16 @@ export default function DashboardPage() {
             <p className="mt-1 text-[11px] text-muted">trần ${data.budget}/tháng</p>
           </Card>
           <Card className="p-4">
+            <div className="flex items-center gap-2 text-xs font-medium text-muted"><ClipboardCheck size={15} strokeWidth={1.75} className="text-brand" aria-hidden />Ngân hàng câu hỏi</div>
+            <p className="mt-1 font-display text-3xl font-semibold text-ink">{data.questionCount.toLocaleString("vi-VN")}</p>
+            <p className="mt-1 text-[11px] text-muted">phủ {data.atomsWithQ.toLocaleString("vi-VN")} nguyên tử</p>
+          </Card>
+          <Card className="p-4">
+            <div className="flex items-center gap-2 text-xs font-medium text-muted"><Workflow size={15} strokeWidth={1.75} className="text-brass-ink" aria-hidden />Thang Socratic</div>
+            <p className="mt-1 font-display text-3xl font-semibold text-ink">{data.ladderCount.toLocaleString("vi-VN")}</p>
+            <p className="mt-1 text-[11px] text-muted">phủ {data.atomsWithL.toLocaleString("vi-VN")} nguyên tử</p>
+          </Card>
+          <Card className="p-4">
             <div className="flex items-center gap-2 text-xs font-medium text-muted"><ClipboardCheck size={15} strokeWidth={1.75} className="text-ok" aria-hidden />Lượt duyệt đã thực hiện</div>
             <p className="mt-1 font-display text-3xl font-semibold text-ink">{data.reviews}</p>
           </Card>
@@ -60,7 +71,7 @@ export default function DashboardPage() {
           <div key={s.id} className="mt-8">
             <div className="mb-3 flex flex-wrap items-center gap-3">
               <h2 className="font-display text-lg font-semibold text-ink">{s.title}</h2>
-              <span className="text-xs text-muted">{s.stats.atomCount} nguyên tử · {s.stats.approved}/{s.stats.totalPkgs} gói Chuẩn trường</span>
+              <span className="text-xs text-muted">{s.stats.atomCount} nguyên tử · {s.chapters.reduce((n, c) => n + (c.questionCount ?? 0), 0).toLocaleString("vi-VN")} câu hỏi · {s.chapters.reduce((n, c) => n + (c.ladderCount ?? 0), 0).toLocaleString("vi-VN")} thang · {s.stats.approved}/{s.stats.totalPkgs} gói Chuẩn trường</span>
               <span className="ml-auto flex items-center gap-2 text-xs text-muted">Độ phủ <Progress value={s.stats.coveragePct} className="w-28" /> <b className="text-ok">{s.stats.coveragePct}%</b></span>
             </div>
             <Card className="overflow-x-auto">
@@ -69,6 +80,8 @@ export default function DashboardPage() {
                   <tr className="border-b border-line text-left text-xs text-muted">
                     <th className="px-4 py-2.5 font-medium">Lớp</th>
                     <th className="px-4 py-2.5 font-medium">Nguyên tử</th>
+                    <th className="px-4 py-2.5 font-medium">Câu hỏi</th>
+                    <th className="px-4 py-2.5 font-medium">Thang Socratic</th>
                     <th className="px-4 py-2.5 font-medium">Đã nháp</th>
                     <th className="px-4 py-2.5 font-medium">Chờ duyệt</th>
                     <th className="px-4 py-2.5 font-medium">Chuẩn trường</th>
@@ -80,6 +93,8 @@ export default function DashboardPage() {
                     <tr key={c.id} className="border-b border-line last:border-0">
                       <td className="px-4 py-2.5 font-medium text-ink">{c.title}</td>
                       <td className="px-4 py-2.5 text-ink-2">{c.atomCount}</td>
+                      <td className="px-4 py-2.5 text-ink-2">{c.questionCount ? `${c.questionCount.toLocaleString("vi-VN")} · ${c.atomsWithQ}/${c.atomCount} nt` : "—"}</td>
+                      <td className="px-4 py-2.5 text-ink-2">{c.ladderCount ? `${c.ladderCount.toLocaleString("vi-VN")} · ${c.atomsWithL}/${c.atomCount} nt` : "—"}</td>
                       <td className="px-4 py-2.5 text-ink-2">{c.drafted}/{c.total}</td>
                       <td className="px-4 py-2.5 text-brass-ink">{c.pending}</td>
                       <td className="px-4 py-2.5 font-semibold text-ok">{c.approved}/{c.total}</td>
