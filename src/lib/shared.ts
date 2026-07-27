@@ -26,6 +26,24 @@ export interface Question {
   nhieu?: { noiDung: string; lyDo?: string }[]; // phương án nhiễu + lý do sai
 }
 
+// Thang Socratic — nạp từ Trạm 4. MỘT thang gỡ MỘT quan niệm sai của MỘT nguyên tử:
+// hỏi dắt qua 4 bậc (siêu nhận thức → hướng chú ý → dẫn về tiền đề → giàn giáo mạnh),
+// chỉ mở `day` (hệ đáp án) khi học sinh đã đủ nỗ lực theo `dieuKienMoDay`.
+// 5 tổ xuất 5 khuôn JSON khác nhau (phẳng / lồng `rungs` / lồng 2 tầng `misconceptions`) — importLadders san phẳng hết.
+export interface LadderRung { bac: number; loai?: string; cauHoi: string }
+export interface Ladder {
+  id: string; atomId: string;
+  key?: string;               // ladder_key của kho — khoá upsert là (atomId, key), id là L-
+  quanNiemSaiId?: string;     // mã quan niệm sai (MIS_…, M1…)
+  quanNiemSai?: string;       // mô tả quan niệm sai thang này gỡ
+  dapAnDung?: string;         // lời giải đúng / correct_answer
+  bac: LadderRung[];          // 4 bậc theo thứ tự 1→4
+  day?: string;               // ĐÁY: hệ đáp án, chỉ mở khi đủ nỗ lực
+  dieuKienMoDay?: string;     // effort gate / luật cộng nỗ lực
+  luuY?: string;              // lưu ý cho giáo viên
+  nguon?: string;             // tên file kho, để truy vết
+}
+
 // Cạnh nối tri thức (đồ thị) — nạp từ bước "2. QUAN HỆ LIÊN KẾT"
 export type EdgeRelation = "prerequisite_hard" | "related_soft" | "misconception";
 export interface Edge {
@@ -106,7 +124,7 @@ export interface Settings {
   // chỉ lưu/gỡ qua op tutorSaveConfig (saveSettings bỏ qua các trường tutor*).
   tutorUrl?: string; tutorApikey?: string; tutorEmail?: string; tutorPassword?: string; tutorJwt?: string;
   // Bộ đếm ID tuần tự (Studio là bên sinh ID sau đồng nhất KC/Q/E/R). max đã cấp; sinh mới = ++counter.
-  idSeq?: { q: number; e: number; r: number };
+  idSeq?: { q: number; e: number; r: number; l?: number };
   // Prompt sinh kịch bản video — sửa trong Cài đặt → Agents. Rỗng = dùng VIDEO_PROMPT mặc định (src/lib/video-prompt.ts).
   videoPrompt?: string;
 }

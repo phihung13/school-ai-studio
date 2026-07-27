@@ -195,7 +195,8 @@ export async function GET(req: NextRequest) {
       const chapter = chapterOf(db, id);
       const outline = chapter ? subtreeOutline(db, chapter.id) : undefined;
       const questions = db.questions.filter((q) => q.atomId === id);
-      return NextResponse.json({ atom, ancestors: anc, packages: pkgs, assets, formats: FORMATS, siblings, refs, outlineRoot: chapter?.title, outline, questions });
+      const ladders = (db.ladders ?? []).filter((l) => l.atomId === id);
+      return NextResponse.json({ atom, ancestors: anc, packages: pkgs, assets, formats: FORMATS, siblings, refs, outlineRoot: chapter?.title, outline, questions, ladders });
     }
     case "package": {
       const pkg = db.packages.find((p) => p.id === id);

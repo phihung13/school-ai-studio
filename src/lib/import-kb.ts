@@ -1,8 +1,8 @@
 // Trộn dữ liệu phân rã SẠCH (đúng schema) vào DB đang chạy — THUẦN CODE, không gọi AI.
 // Dùng lại đúng khuôn file mà kb-seed đã nạp (atoms + edges). Validator chặn rác;
 // upsert theo MÃ, không xoá/không đụng gói-duyệt-tài liệu đã có (an toàn, chạy lại nhiều lần vẫn đúng).
-import { DB, TreeNode, Edge, AtomType, EdgeRelation, Reference, Question } from "./store";
-import { newKC, newE, newQ } from "./ids";
+import { DB, TreeNode, Edge, AtomType, EdgeRelation, Reference, Question, Ladder, LadderRung } from "./store";
+import { newKC, newE, newQ, newL } from "./ids";
 
 const ENT: Record<string, string> = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'", "&nbsp;": " " };
 function clean(s: unknown): string { return String(s ?? "").replace(/&amp;|&lt;|&gt;|&quot;|&#39;|&nbsp;/g, (m) => ENT[m]).replace(/\s+/g, " ").trim(); }
@@ -178,7 +178,9 @@ export function importQuestions(db: DB, rowsIn: unknown, opts: { dryRun: boolean
   const rows = Array.isArray(rowsIn) ? (rowsIn as RawQuestion[]) : [];
   const res: QuestionsResult = { errors: [], created: 0, updated: 0, skipped: 0, atomsTouched: 0, applied: !opts.dryRun };
   // File kho gắn câu theo MÃ VỊ TRÍ nguyên tử → quy về KC. id câu giờ là Q-; giữ mã câu cũ ở `key`.
-  const atomByCode = new Map(db.tree.filter((n) => n.kind === "atom" && n.code).map((n) => [n.code!, n]));
+  // Từ đợt 27/07 kho phát thẳng KC-id (chiến dịch đồng nhất ID) → tra CẢ HAI: mã vị trí và KC.
+  const atomByCode = new Map<string, TreeNode>();
+  for (const n of db.tree) if (n.kind === "atom") { if (n.code) atomByCode.set(n.code, n); atomByCode.set(n.id, n); }
   const qByKey = new Map(db.questions.map((q) => [`${q.atomId}#${q.key ?? q.id}`, q]));  // (atomKC, mã câu) → câu
   const dry = opts.dryRun;
   const touched = new Set<string>();
@@ -209,6 +211,118 @@ export function importQuestions(db: DB, rowsIn: unknown, opts: { dryRun: boolean
     if (cur) { if (!dry) Object.assign(cur, fields); res.updated++; }
     else { res.created++; if (!dry) { const q: Question = { id: newQ(db), ...fields }; db.questions.push(q); qByKey.set(`${atomId}#${key}`, q); } }
     touched.add(atomId);
+  }
+  res.atomsTouched = touched.size;
+  return res;
+}
+
+// ── Thang Socratic (Trạm 4): mỗi thang gỡ MỘT quan niệm sai của MỘT nguyên tử ──
+// Năm tổ xuất năm khuôn JSON khác nhau; hàm này chấp nhận cả ba kiểu và san phẳng về một dạng:
+//   (a) PHẲNG   — Toán 10: bac_1_sieu_nhan_thuc … bac_4_gian_giao
+//   (b) PHẲNG   — CN6 / Tiếng Anh 10: bac1_sieu_nhan_thuc … bac4_gian_giao_manh
+//   (c) LỒNG 1  — Địa 10: rungs[{level,type,prompt}] + floor{reveal} + effort_gate
+//               — Vật lí 10 (C.III–VII): thang[{bac,ten,cau_hoi}] + luat_cong
+//   (d) LỒNG 2  — Vật lí 10: node → misconceptions[] → bac[{so,loai,cau_hoi}]  ⇒ tách thành nhiều thang
+// Upsert theo (nguyên tử, ladder_key) nên chạy lại không đẻ trùng; thiếu ladder_key thì băm nội dung bậc 1.
+export interface RawLadder { [k: string]: unknown }
+export interface LaddersResult { errors: string[]; created: number; updated: number; skipped: number; atomsTouched: number; applied: boolean }
+
+const RUNG_LABEL = ["Siêu nhận thức", "Hướng chú ý", "Dẫn về tiền đề", "Giàn giáo mạnh"];
+const str = (o: Record<string, unknown>, ...keys: string[]): string => {
+  for (const k of keys) { const v = o[k]; if (typeof v === "string" && v.trim()) return txt(v); if (typeof v === "number") return String(v); }
+  return "";
+};
+// Gom 4 bậc từ các cột phẳng: bac1_… / bac_1_… (thứ tự cột quyết định thứ tự bậc).
+function rungsFromFlat(o: Record<string, unknown>): LadderRung[] {
+  const out: LadderRung[] = [];
+  for (let i = 1; i <= 4; i++) {
+    const key = Object.keys(o).find((k) => new RegExp(`^bac_?${i}(_|$)`, "i").test(k));
+    const cauHoi = key ? txt(o[key]) : "";
+    if (cauHoi) out.push({ bac: i, loai: RUNG_LABEL[i - 1], cauHoi });
+  }
+  return out;
+}
+function rungsFromNested(arr: unknown): LadderRung[] {
+  if (!Array.isArray(arr)) return [];
+  const out: LadderRung[] = [];
+  arr.forEach((r, i) => {
+    const o = (r ?? {}) as Record<string, unknown>;
+    const cauHoi = txt(str(o, "cau_hoi", "prompt", "noi_dung", "question"));
+    if (!cauHoi) return;
+    out.push({ bac: Number(str(o, "so", "level", "bac")) || i + 1, loai: clean(str(o, "loai", "ten", "type")) || RUNG_LABEL[i] || undefined, cauHoi });
+  });
+  return out;
+}
+
+// Một bản ghi nguồn → một hoặc nhiều thang (khuôn Vật lí lồng 2 tầng cho ra nhiều).
+function expand(rec: Record<string, unknown>): Record<string, unknown>[] {
+  const mis = (Array.isArray(rec.misconceptions) ? rec.misconceptions : rec.ladders) as unknown;
+  if (!Array.isArray(mis) || !mis.length) return [rec];
+  return mis.map((m, i) => {
+    const mo = (m ?? {}) as Record<string, unknown>;
+    return { ...rec, misconceptions: undefined, ladders: undefined, __rungs: mo.bac ?? mo.rungs ?? mo.thang, __misId: str(mo, "ma_quan_niem_sai", "misconception_id"),
+      __mis: str(mo, "mo_ta", "misconception", "quan_niem_sai"), __day: str(mo, "day_he_dap_an", "dap_an", "reveal"),
+      __gate: str(mo, "cong_no_luc", "luat_cong_no_luc", "effort_gate", "effort_gate_rule"), __luuY: str(mo, "luu_y_giao_vien", "luu_y"),
+      __suffix: str(mo, "ma_quan_niem_sai") || `M${i + 1}` };
+  });
+}
+
+export function importLadders(db: DB, rowsIn: unknown, opts: { dryRun: boolean; nguon?: string }): LaddersResult {
+  // Chấp nhận: mảng trần, {socratic_ladder:[…]}, {socratic_ladders:[…]}, hoặc mảng các file như trên.
+  const pick = (x: unknown): Record<string, unknown>[] => {
+    if (Array.isArray(x)) return x.flatMap(pick);
+    if (x && typeof x === "object") {
+      const o = x as Record<string, unknown>;
+      if (Array.isArray(o.socratic_ladder)) return (o.socratic_ladder as unknown[]).flatMap(pick);
+      if (Array.isArray(o.socratic_ladders)) return (o.socratic_ladders as unknown[]).flatMap(pick);
+      // `ladders` vừa là vỏ file vừa là mảng con trong node → chỉ bung khi KHÔNG phải node
+      if (Array.isArray(o.ladders) && !o.node_key && !o.ref) return (o.ladders as unknown[]).flatMap(pick);
+      return [o];
+    }
+    return [];
+  };
+  const rows = pick(rowsIn).flatMap(expand);
+  const res: LaddersResult = { errors: [], created: 0, updated: 0, skipped: 0, atomsTouched: 0, applied: !opts.dryRun };
+  if (!Array.isArray(db.ladders)) db.ladders = [];
+  // Kho phát KC-id ở `node_key`, mã vị trí ở `ref`/`vi_tri_trong_ct` → tra được cả hai.
+  const atomBy = new Map<string, TreeNode>();
+  for (const n of db.tree) if (n.kind === "atom") { if (n.code) atomBy.set(n.code, n); atomBy.set(n.id, n); }
+  const byKey = new Map(db.ladders.map((l) => [`${l.atomId}#${l.key ?? l.id}`, l]));
+  const dry = opts.dryRun;
+  const touched = new Set<string>();
+  let i = 0;
+  for (const r of rows) {
+    i++;
+    const cands = [str(r, "node_key"), str(r, "kc_id"), str(r, "ref"), str(r, "vi_tri_trong_ct"), str(r, "node_id")].filter(Boolean);
+    const atom = cands.map((c) => atomBy.get(c)).find(Boolean);
+    if (!atom) { res.errors.push(`Thang dòng ${i} · ${cands[0] || "(không mã)"}: nguyên tử chưa tồn tại`); res.skipped++; continue; }
+
+    let bac = rungsFromNested(r.__rungs ?? r.rungs ?? r.thang ?? r.bac);
+    if (!bac.length) bac = rungsFromFlat(r);
+    if (!bac.length) { res.errors.push(`Thang dòng ${i} · ${atom.code ?? atom.id}: không đọc được bậc nào`); res.skipped++; continue; }
+
+    const floor = (r.floor ?? {}) as Record<string, unknown>;
+    const gate = (r.effort_gate ?? {}) as Record<string, unknown>;
+    // ladder_key của kho hay để TRỐNG (toàn bộ Toán 10) → khoá dự phòng phải băm cả quan niệm sai + 4 bậc,
+    // nếu chỉ băm bậc 1 thì các thang khác quan niệm sai của cùng một nguyên tử đè lên nhau (mất 144/725 thang Toán C1).
+    const misText = String(r.__mis ?? "") || str(r, "quan_niem_sai_full", "ten_quan_niem_sai", "mo_ta_quan_niem_sai", "misconception", "quan_niem_sai");
+    const lk = clean(str(r, "ladder_key") + (r.__suffix ? `-${r.__suffix}` : ""));
+    const key = lk || `l${clean(str(r, "q_index")) || "0"}-${Math.abs(hash(misText + "|" + bac.map((b) => b.cauHoi).join("|"))).toString(36)}`;
+    const fields = {
+      atomId: atom.id, key,
+      quanNiemSaiId: clean(String(r.__misId ?? "") || str(r, "misconception_id", "ma_quan_niem_sai", "quan_niem_sai_index")) || undefined,
+      quanNiemSai: txt(String(r.__mis ?? "") || str(r, "quan_niem_sai_full", "ten_quan_niem_sai", "mo_ta_quan_niem_sai", "misconception", "quan_niem_sai")) || undefined,
+      dapAnDung: txt(str(r, "loi_giai_dung", "correct_answer", "dap_an_dung", "question_summary")) || undefined,
+      bac,
+      day: txt(String(r.__day ?? "") || str(r, "day_he_dap_an") || str(floor, "reveal", "noi_dung")) || undefined,
+      dieuKienMoDay: txt(String(r.__gate ?? "") || str(r, "luat_cong_ngu_luc", "luat_cong_no_luc", "cong_no_luc", "luat_cong") || str(gate, "open_floor_when", "differentiation")) || undefined,
+      luuY: txt(String(r.__luuY ?? "") || str(r, "luu_y_giao_vien", "luu_y")) || undefined,
+      nguon: opts.nguon,
+    };
+    const cur = byKey.get(`${atom.id}#${key}`);
+    if (cur) { if (!dry) Object.assign(cur, fields); res.updated++; }
+    else { res.created++; if (!dry) { const rec: Ladder = { id: newL(db), ...fields }; db.ladders.push(rec); byKey.set(`${atom.id}#${key}`, rec); } }
+    touched.add(atom.id);
   }
   res.atomsTouched = touched.size;
   return res;

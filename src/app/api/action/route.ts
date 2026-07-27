@@ -4,7 +4,7 @@ import {
   PkgFields, AssetFormat, Job, JobItem, JobTask, User, DB, TreeNode,
 } from "@/lib/store";
 import { draftPackage, rewriteField, reviewPackage, generateAssetContent, tutorAnswer, testAiConnection, aiKey, aiModel } from "@/lib/ai";
-import { importKnowledge, importRefs, importQuestions } from "@/lib/import-kb";
+import { importKnowledge, importRefs, importQuestions, importLadders } from "@/lib/import-kb";
 import { newKC, newR } from "@/lib/ids";
 import { flashcardsForAtom } from "@/lib/flashcards";
 import { gradeCard } from "@/lib/srs";
@@ -381,6 +381,15 @@ export async function POST(req: NextRequest) {
       const dr = dryRun !== false;
       const result = importQuestions(db, questions, { dryRun: dr });
       if (!dr) { logActivity(user.name, "nhập ngân hàng câu hỏi", `${result.created} mới · ${result.updated} sửa · ${result.atomsTouched} nguyên tử`, "/settings?tab=import"); persist(); }
+      return NextResponse.json({ ok: true, result });
+    }
+    case "importLadders": {
+      if (!isAdmin) return bad("Chỉ quản trị được nhập dữ liệu", 403);
+      const { ladders, dryRun, nguon } = body as { ladders?: unknown; dryRun?: boolean; nguon?: string };
+      if (ladders == null) return bad("File không có dữ liệu thang Socratic");
+      const dr = dryRun !== false;
+      const result = importLadders(db, ladders, { dryRun: dr, nguon: typeof nguon === "string" ? nguon : undefined });
+      if (!dr) { logActivity(user.name, "nhập thang Socratic", `${result.created} mới · ${result.updated} sửa · ${result.atomsTouched} nguyên tử`, "/settings?tab=import"); persist(); }
       return NextResponse.json({ ok: true, result });
     }
     case "importRefs": {

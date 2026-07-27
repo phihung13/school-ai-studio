@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Wand2, Plus, FolderOpen, Eye, FolderOpen as DriveIcon, BookOpen, Film, Link as LinkIcon, ExternalLink, Cog, Network, ArrowRight, Download, Play, type LucideIcon } from "lucide-react";
 import Shell, { Breadcrumb } from "@/components/shell";
 import { getData, api, Card, PageLoading, LoadError, Button, StatusBadge, AssetBadge, Spinner, Modal, useToast, cls, FormatIcon, M } from "@/components/ui";
-import { TreeNode, Pkg, Asset, AssetFormat, Reference, User, OutlineNode, Question, FORMAT_LABEL, LEVEL_LABEL, LEVEL_COLOR, ATOM_TYPE_LABEL, ATOM_TYPE_COLOR, readableMath } from "@/lib/shared";
+import { TreeNode, Pkg, Asset, AssetFormat, Reference, User, OutlineNode, Question, Ladder, FORMAT_LABEL, LEVEL_LABEL, LEVEL_COLOR, ATOM_TYPE_LABEL, ATOM_TYPE_COLOR, readableMath } from "@/lib/shared";
 import TreeMindmap from "@/components/tree-mindmap";
 
 type RefKind = Reference["kind"];
@@ -12,7 +12,7 @@ interface AtomRef extends Reference { from: string }
 
 interface AtomData {
   atom: TreeNode; ancestors: TreeNode[]; packages: (Pkg | null)[]; assets: Asset[]; formats: AssetFormat[]; siblings: TreeNode[];
-  refs?: AtomRef[]; outline?: OutlineNode; outlineRoot?: string; questions?: Question[];
+  refs?: AtomRef[]; outline?: OutlineNode; outlineRoot?: string; questions?: Question[]; ladders?: Ladder[];
 }
 
 const REF_ICON: Record<RefKind, LucideIcon> = { drive: DriveIcon, sgk: BookOpen, video: Film, link: LinkIcon };
@@ -44,6 +44,7 @@ export default function AtomPage({ params }: { params: Promise<{ id: string }> }
   const { atom, packages, assets, formats } = data;
   const refs = data.refs || [];
   const questions = data.questions || [];
+  const ladders = data.ladders || [];
   const canEdit = me && me.role !== "principal";
   const pkg = packages[lvl - 1];
 
@@ -269,6 +270,35 @@ export default function AtomPage({ params }: { params: Promise<{ id: string }> }
                     </ul>
                   )}
                 </div>
+              ))}
+            </Card>
+          </>
+        )}
+
+        {ladders.length > 0 && (
+          <>
+            <h2 className="mb-1 mt-9 font-display text-lg font-semibold text-ink">Thang Socratic ({ladders.length})</h2>
+            <p className="mb-3 text-sm text-ink-2">Mỗi thang gỡ một quan niệm sai bằng 4 bậc hỏi dắt. Đáy — hệ đáp án — chỉ mở khi học sinh đã đủ nỗ lực.</p>
+            <Card className="divide-y divide-line">
+              {ladders.map((l) => (
+                <details key={l.id} className="group px-4 py-3">
+                  <summary className="flex cursor-pointer list-none items-start gap-2">
+                    <span className="mt-0.5 shrink-0 rounded-full bg-warn/10 px-2 py-0.5 text-[11px] text-warn">Quan niệm sai</span>
+                    <span className="min-w-0 flex-1 text-sm text-ink">{l.quanNiemSai || l.quanNiemSaiId || l.key}</span>
+                    <span className="shrink-0 text-[11px] text-muted">{l.bac.length} bậc</span>
+                  </summary>
+                  <ol className="mt-2.5 space-y-2 border-l border-line pl-3">
+                    {l.bac.map((b) => (
+                      <li key={b.bac} className="text-[13px]">
+                        <span className="mr-1.5 rounded bg-surface-2 px-1.5 py-0.5 text-[11px] text-muted">Bậc {b.bac}{b.loai ? ` · ${b.loai}` : ""}</span>
+                        <span className="text-ink-2"><M>{b.cauHoi}</M></span>
+                      </li>
+                    ))}
+                  </ol>
+                  {l.day && <p className="mt-2.5 text-[13px] text-ok">Đáy · <span className="text-ink-2"><M>{l.day}</M></span></p>}
+                  {l.dieuKienMoDay && <p className="mt-1 text-[12px] text-muted">Điều kiện mở đáy: {l.dieuKienMoDay}</p>}
+                  {l.luuY && <p className="mt-1 text-[12px] text-muted">Lưu ý GV: {l.luuY}</p>}
+                </details>
               ))}
             </Card>
           </>

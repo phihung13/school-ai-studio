@@ -1,6 +1,6 @@
 // Sinh ID chuẩn đồng nhất (sau di trú KC/Q/E/R/L). Studio là BÊN SINH ID (authority).
 //  • KC- + 7 số NGẪU NHIÊN không trùng — cho điểm tri thức (atom/node). Mã đại diện, vô nghĩa vị trí.
-//  • Q-/E-/R- + 7 số TUẦN TỰ (++counter trong settings.idSeq) — câu hỏi / cạnh / học liệu.
+//  • Q-/E-/R-/L- + 7 số TUẦN TỰ (++counter trong settings.idSeq) — câu hỏi / cạnh / học liệu / thang Socratic.
 //  • Mã vị trí cũ (TA10-C04-E01) vẫn sống ở field `code` của atom (display + suy chương/cụm khi import).
 import { DB } from "./store";
 
@@ -16,15 +16,17 @@ export function newKC(db: DB, used?: Set<string>): string {
   return k;
 }
 
-function seq(db: DB): { q: number; e: number; r: number } {
+function seq(db: DB): { q: number; e: number; r: number; l?: number } {
   if (!db.settings.idSeq) db.settings.idSeq = { q: 0, e: 0, r: 0 };
   return db.settings.idSeq;
 }
 export function newQ(db: DB): string { return "Q-" + pad7(++seq(db).q); }
 export function newE(db: DB): string { return "E-" + pad7(++seq(db).e); }
 export function newR(db: DB): string { return "R-" + pad7(++seq(db).r); }
+export function newL(db: DB): string { const s = seq(db); s.l = (s.l ?? 0) + 1; return "L-" + pad7(s.l); }
 
 export const isKC = (s: string) => /^KC-\d{7}$/.test(s);
 export const isQ = (s: string) => /^Q-\d{7}$/.test(s);
 export const isE = (s: string) => /^E-\d{7}$/.test(s);
 export const isR = (s: string) => /^R-\d{7}$/.test(s);
+export const isL = (s: string) => /^L-\d{7}$/.test(s);
