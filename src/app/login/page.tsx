@@ -1,8 +1,33 @@
 "use client";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, User as UserIcon, Lock } from "lucide-react";
 import { api, Button, Spinner, useToast } from "@/components/ui";
+import { LogoBadge } from "@/components/logo";
+
+// Lỗi do route /api/auth/oidc/callback ném về dưới dạng ?err= — dịch sang tiếng người dùng
+const SSO_ERR: Record<string, string> = {
+  "sai-domain": "Email này không thuộc trường nên chưa được vào. Hãy dùng email do trường cấp, hoặc đăng nhập bằng mật khẩu.",
+  "trung-lien-ket": "Email này đã gắn với một tài khoản khác trong hệ thống. Báo quản trị kiểm tra giúp bạn.",
+  "khong-ket-noi": "Chưa hỏi được nhà cung cấp đăng nhập. Thử lại sau ít phút, hoặc đăng nhập bằng mật khẩu.",
+  "thieu-email": "Tài khoản này không chia sẻ email nên không xác định được bạn là ai.",
+  "chua-cau-hinh": "Quản trị chưa bật đăng nhập một lần cho hệ thống.",
+  "phien-het-han": "Lượt đăng nhập đã hết hạn. Bấm lại nút ở trên giúp mình nhé.",
+  "google-tu-choi": "Nhà cung cấp không xác nhận được tài khoản. Thử lại lần nữa xem sao.",
+  "email-chua-xac-thuc": "Email của tài khoản này chưa được nhà cung cấp xác thực.",
+  huy: "Bạn đã huỷ lượt đăng nhập.",
+};
+
+function GoogleMark() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden>
+      <path fill="#4285F4" d="M45.1 24.5c0-1.6-.1-3.2-.4-4.7H24v8.9h11.8c-.5 2.8-2 5.1-4.4 6.7v5.5h7.1c4.1-3.8 6.6-9.4 6.6-16.4z" />
+      <path fill="#34A853" d="M24 46c5.9 0 10.9-2 14.5-5.3l-7.1-5.5c-2 1.3-4.5 2.1-7.4 2.1-5.7 0-10.5-3.8-12.2-9H4.5v5.7C8.1 41.2 15.5 46 24 46z" />
+      <path fill="#FBBC05" d="M11.8 28.3c-.4-1.3-.7-2.7-.7-4.3s.2-2.9.7-4.3v-5.7H4.5C2.9 17.1 2 20.4 2 24s.9 6.9 2.5 10l7.3-5.7z" />
+      <path fill="#EA4335" d="M24 10.7c3.2 0 6.1 1.1 8.4 3.3l6.3-6.3C34.9 4.1 29.9 2 24 2 15.5 2 8.1 6.8 4.5 14l7.3 5.7c1.7-5.2 6.5-9 12.2-9z" />
+    </svg>
+  );
+}
 
 const LEAVES = [
   [120, 96, 30, "#4F9A3C"], [92, 118, 26, "#5FAE46"], [148, 118, 26, "#3E8C6A"], [120, 130, 28, "#4F9A3C"],
@@ -35,7 +60,18 @@ export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [sso, setSso] = useState<{ label: string } | null>(null);
   const [toast, show] = useToast();
+
+  useEffect(() => {
+    // hỏi server có bật SSO không (view "me" không cần đăng nhập) + báo lỗi lượt Google vừa hỏng
+    fetch("/api/data?view=me").then((r) => r.json()).then((d) => setSso(d.sso ?? null)).catch(() => {});
+    const err = new URLSearchParams(window.location.search).get("err");
+    if (err) {
+      show(SSO_ERR[err] || "Không đăng nhập được bằng tài khoản trường.", "err");
+      window.history.replaceState(null, "", "/login"); // dọn URL để F5 không hiện lại lỗi cũ
+    }
+  }, [show]);
 
   const login = async () => {
     if (!username.trim() || !password) return;
@@ -70,10 +106,24 @@ export default function LoginPage() {
         {toast}
         <div className="w-full max-w-sm fade-up">
           <div className="mb-6">
-            <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-brand text-2xl text-on-brand">🌱</span>
+            <LogoBadge size="lg" className="mb-3 shadow-sm" />
             <h2 className="text-2xl font-bold text-ink">Đăng nhập</h2>
             <p className="mt-1 text-sm text-ink-2">Nhập tài khoản của bạn để vào Học liệu Việt Anh.</p>
           </div>
+
+          {sso && (
+            <>
+              <a href="/api/auth/oidc"
+                className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-line-strong bg-surface py-2.5 text-sm font-medium text-ink transition-colors hover:bg-surface-2 active:translate-y-px">
+                {sso.label === "Google" ? <GoogleMark /> : <LogoBadge size="sm" />}Tiếp tục với {sso.label}
+              </a>
+              <div className="my-5 flex items-center gap-3">
+                <span className="h-px flex-1 bg-line" />
+                <span className="text-xs text-muted">hoặc dùng mật khẩu</span>
+                <span className="h-px flex-1 bg-line" />
+              </div>
+            </>
+          )}
 
           <label className="mb-1.5 block text-sm font-medium text-ink">Tên đăng nhập hoặc email</label>
           <div className="relative">

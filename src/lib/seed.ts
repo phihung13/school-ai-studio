@@ -366,7 +366,7 @@ export function buildSeed(): DB {
     reviews: [],
     jobs: [],
     cardStates: [],
-    questions: [], ladders: [],
+    questions: [], ladders: [], identityLinks: [],
     proposals: [
       { id: uid("pr_"), kind: "split", targetTitle: "T6.1.4.1c — Vận dụng tính chất để tính nhanh", description: "Đề xuất tách thành 2 nguyên tử: (1) tính nhanh tổng không quy luật bằng ghép cặp; (2) tính tổng dãy có quy luật (kiểu Gauss). Hiện gộp chung khiến mức Vận dụng quá rộng.", status: "open", by: "Cô Lan (Toán)", at: t },
     ],

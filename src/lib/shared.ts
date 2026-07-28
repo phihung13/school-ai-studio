@@ -3,6 +3,11 @@
 export type Role = "teacher" | "lead" | "admin" | "principal";
 export interface User { id: string; name: string; role: Role; subject?: string; title: string; email?: string; password?: string; }
 
+// Liên kết định danh ngoài (OIDC) → tài khoản trong app. Khoá theo CẢ HAI: (issuer, subject).
+// Vì sao không khoá mỗi "subject": đổi nhà cung cấp (Google → School Data Hub) thì subject khác hẳn;
+// có cột issuer thì chỉ cần thêm một dòng mới, tài khoản và dữ liệu cũ vẫn dính nguyên chủ.
+export interface IdentityLink { id: string; userId: string; issuer: string; subject: string; linkedAt: string }
+
 export interface Reference { id: string; title: string; url: string; kind: "drive" | "sgk" | "link" | "video" }
 
 // type nguyên tử theo phân rã GDPT 2018: Khái niệm · Quy tắc/Định lí · Kỹ năng · Vận dụng
@@ -123,6 +128,12 @@ export interface Settings {
   // Kết nối app Gia sư (tutor): đẩy học liệu Chuẩn trường qua import-kg. Mật khẩu/JWT KHÔNG trả thô về client,
   // chỉ lưu/gỡ qua op tutorSaveConfig (saveSettings bỏ qua các trường tutor*).
   tutorUrl?: string; tutorApikey?: string; tutorEmail?: string; tutorPassword?: string; tutorJwt?: string;
+  // Đăng nhập một lần (OIDC). Secret KHÔNG trả thô về client, chỉ lưu/gỡ qua op saveSso.
+  // googleDomains = danh sách domain được vào, ngăn bằng dấu phẩy (luật vào cửa: đúng domain là đủ).
+  googleClientId?: string; googleClientSecret?: string; googleDomains?: string;
+  // Nhà cung cấp định danh: mặc định Google. Ngày chuyển sang School Data Hub chỉ đổi đúng dòng này
+  // (+ client id/secret) — redirect_uri và bảng identityLinks giữ nguyên.
+  oidcDiscoveryUrl?: string;
   // Bộ đếm ID tuần tự (Studio là bên sinh ID sau đồng nhất KC/Q/E/R). max đã cấp; sinh mới = ++counter.
   idSeq?: { q: number; e: number; r: number; l?: number };
   // Prompt sinh kịch bản video — sửa trong Cài đặt → Agents. Rỗng = dùng VIDEO_PROMPT mặc định (src/lib/video-prompt.ts).

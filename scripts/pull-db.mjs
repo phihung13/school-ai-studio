@@ -13,7 +13,8 @@ const REST = `${BASE}/rest/v1/studio_kv`;
 const H = { apikey: KEY, Authorization: `Bearer ${KEY}` };
 const DB_FILE = process.env.STUDIO_DB ? path.resolve(process.env.STUDIO_DB) : path.join(process.cwd(), "data", "studio.db");
 const TABLE = { users: "users", tree: "tree", edges: "edges", packages: "packages", assets: "assets",
-  reviews: "reviews", jobs: "jobs", proposals: "proposals", activity: "activity", cardStates: "card_states", questions: "questions", ladders: "ladders" };
+  reviews: "reviews", jobs: "jobs", proposals: "proposals", activity: "activity", cardStates: "card_states", questions: "questions", ladders: "ladders",
+  identityLinks: "identity_links" };
 const COLLS = Object.keys(TABLE);
 
 async function pullAll() {

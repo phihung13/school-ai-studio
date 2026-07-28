@@ -3,14 +3,14 @@ import path from "path";
 import crypto from "crypto";
 import { DatabaseSync } from "node:sqlite";
 import { mirror, KV_SYNC_ON } from "./kv-sync";
-import type { User, TreeNode, Edge, Pkg, Asset, Review, Job, Proposal, Activity, Settings, OutlineNode, CardState, Question, Ladder } from "./shared";
+import type { User, TreeNode, Edge, Pkg, Asset, Review, Job, Proposal, Activity, Settings, OutlineNode, CardState, Question, Ladder, IdentityLink } from "./shared";
 
 export * from "./shared";
 
 export interface DB {
   users: User[]; tree: TreeNode[]; edges: Edge[]; packages: Pkg[]; assets: Asset[];
   reviews: Review[]; jobs: Job[]; proposals: Proposal[]; activity: Activity[]; settings: Settings;
-  cardStates: CardState[]; questions: Question[]; ladders: Ladder[];
+  cardStates: CardState[]; questions: Question[]; ladders: Ladder[]; identityLinks: IdentityLink[];
   secret: string;
 }
 
@@ -29,16 +29,16 @@ const DATA_DIR = path.join(process.cwd(), "data");
 const DB_FILE = process.env.STUDIO_DB ? path.resolve(process.env.STUDIO_DB) : path.join(DATA_DIR, "studio.db");
 const LEGACY_JSON = path.join(DATA_DIR, "db.json"); // giữ nguyên làm bản sao lưu, không bao giờ ghi lại
 
-type Coll = "users" | "tree" | "edges" | "packages" | "assets" | "reviews" | "jobs" | "proposals" | "activity" | "cardStates" | "questions" | "ladders";
-const COLLS: Coll[] = ["users", "tree", "edges", "packages", "assets", "reviews", "jobs", "proposals", "activity", "cardStates", "questions", "ladders"];
+type Coll = "users" | "tree" | "edges" | "packages" | "assets" | "reviews" | "jobs" | "proposals" | "activity" | "cardStates" | "questions" | "ladders" | "identityLinks";
+const COLLS: Coll[] = ["users", "tree", "edges", "packages", "assets", "reviews", "jobs", "proposals", "activity", "cardStates", "questions", "ladders", "identityLinks"];
 const TABLE: Record<Coll, string> = {
   users: "users", tree: "tree", edges: "edges", packages: "packages", assets: "assets",
   reviews: "reviews", jobs: "jobs", proposals: "proposals", activity: "activity", cardStates: "card_states",
-  questions: "questions", ladders: "ladders",
+  questions: "questions", ladders: "ladders", identityLinks: "identity_links",
 };
 const ID_PREFIX: Record<Coll, string> = {
   users: "u", tree: "n", edges: "e", packages: "p", assets: "a",
-  reviews: "r", jobs: "j", proposals: "pr", activity: "act", cardStates: "cs", questions: "q", ladders: "l",
+  reviews: "r", jobs: "j", proposals: "pr", activity: "act", cardStates: "cs", questions: "q", ladders: "l", identityLinks: "il",
 };
 
 let conn: DatabaseSync | null = null;
@@ -111,6 +111,7 @@ function normalize(db: DB): void {
   if (!Array.isArray(db.cardStates)) db.cardStates = [];
   if (!Array.isArray(db.questions)) db.questions = [];
   if (!Array.isArray(db.ladders)) db.ladders = [];
+  if (!Array.isArray(db.identityLinks)) db.identityLinks = [];
   if (Array.isArray(db.jobs)) db.jobs = db.jobs.filter((j) => Array.isArray((j as { tasks?: unknown }).tasks));
   for (const coll of COLLS) {
     const arr = db[coll] as { id?: string }[] | undefined;

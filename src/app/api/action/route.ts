@@ -11,6 +11,7 @@ import { gradeCard } from "@/lib/srs";
 import type { Grade } from "ts-fsrs";
 import { makeToken, verifyToken, SESSION_COOKIE, DEMO_PASSWORD, hashPw } from "@/lib/auth";
 import { pushAssets, tutorTest, clearTutorToken } from "@/lib/tutor-push";
+import { clearDiscoveryCache, oidcConfig, oidcEnabled } from "@/lib/oidc";
 
 export const dynamic = "force-dynamic";
 
@@ -501,6 +502,8 @@ export async function POST(req: NextRequest) {
       delete (settings as Record<string, unknown>).anthropicApiKey;
       // cấu hình tutor cũng vậy — chỉ nhận qua op tutorSaveConfig (client không có bản thô để gửi lại)
       for (const k of ["tutorUrl", "tutorApikey", "tutorEmail", "tutorPassword", "tutorJwt"]) delete (settings as Record<string, unknown>)[k];
+      // cấu hình Google cũng chỉ nhận qua op riêng (client không giữ bản thô của secret)
+      for (const k of ["googleClientId", "googleClientSecret", "googleDomains"]) delete (settings as Record<string, unknown>)[k];
       db.settings = { ...db.settings, ...settings, monthlyBudgetUsd: Number(settings.monthlyBudgetUsd ?? db.settings.monthlyBudgetUsd) || db.settings.monthlyBudgetUsd };
       logActivity(user.name, "cập nhật", "phong cách chung", "/settings");
       persist();
@@ -523,6 +526,31 @@ export async function POST(req: NextRequest) {
       persist();
       const kNow = aiKey(db);
       return NextResponse.json({ ok: true, hasKey: !!kNow, keyTail: kNow ? kNow.slice(-4) : "", model: aiModel(db) });
+    }
+    case "saveSso": {
+      // Bật/tắt đăng nhập một lần từ UI Cài đặt — có hiệu lực NGAY. Gửi chuỗi rỗng = gỡ.
+      if (!isAdmin) return bad("Chỉ quản trị", 403);
+      const { clientId, clientSecret, domains } = body as { clientId?: string; clientSecret?: string; domains?: string };
+      if (clientId !== undefined) {
+        const v = String(clientId).trim().slice(0, 200);
+        if (v && !/\.apps\.googleusercontent\.com$/.test(v)) return bad("Client ID không đúng dạng — phải kết thúc bằng .apps.googleusercontent.com");
+        if (v) db.settings.googleClientId = v; else delete db.settings.googleClientId;
+      }
+      if (clientSecret !== undefined) {
+        const v = String(clientSecret).trim().slice(0, 200);
+        if (v) db.settings.googleClientSecret = v; else delete db.settings.googleClientSecret;
+      }
+      if (domains !== undefined) {
+        // chuẩn hoá: bỏ @ thừa, gộp khoảng trắng, hạ chữ thường — đây là hàng rào duy nhất chặn người lạ
+        const list = String(domains).split(/[,;\s]+/).map((d) => d.trim().toLowerCase().replace(/^@/, "")).filter(Boolean);
+        if (list.some((d) => !/^[a-z0-9.-]+\.[a-z]{2,}$/.test(d))) return bad("Domain không hợp lệ — ví dụ đúng: truongvietanh.com");
+        if (list.length) db.settings.googleDomains = list.join(", "); else delete db.settings.googleDomains;
+      }
+      clearDiscoveryCache(); // đổi cấu hình là quên bản discovery đang nhớ, khỏi phải khởi động lại
+      logActivity(user.name, oidcEnabled(db) ? "bật" : "tắt", "đăng nhập một lần", "/settings?tab=general"); // không log secret
+      persist();
+      const g = oidcConfig(db);
+      return NextResponse.json({ ok: true, enabled: oidcEnabled(db), clientId: g.clientId, hasSecret: !!g.clientSecret, domains: g.domains.join(", "), source: g.source });
     }
     case "testAiKey": {
       // Gọi thử OpenRouter 1 lượt tí hon: test key VỪA GÕ (chưa lưu) hoặc key đang có hiệu lực

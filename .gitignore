@@ -57,3 +57,4 @@ next-env.d.ts
 
 # kết quả dry-run của scripts/fix-katex-questions.mjs (sinh lại được, không cần commit)
 /katex-changes.json
+.impeccable/

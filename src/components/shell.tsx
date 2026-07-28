@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { User, ROLE_LABEL, readableMath } from "@/lib/shared";
 import { api, cls, getData } from "./ui";
+import { LogoBadge } from "./logo";
 
 interface Item { href: string; label: string; icon: LucideIcon; roles?: string[] }
 interface Group { title?: string; items: Item[] }
@@ -28,15 +29,6 @@ const NAV: Group[] = [
 ];
 
 let cachedUser: User | null = null;
-
-function LeafMark({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden fill="none">
-      <path d="M20 4C11 4 4 10 4 19c0 0 0 1 1 1 9 0 15-6 15-15 0 0 0-1-0-1Z" fill="currentColor" opacity="0.92" />
-      <path d="M6 18C10 13 14 10 18 8" stroke="#fff" strokeOpacity="0.75" strokeWidth="1.4" strokeLinecap="round" />
-    </svg>
-  );
-}
 
 export default function Shell({ children, user }: { children: React.ReactNode; user: User | null }) {
   const pathname = usePathname();
@@ -76,7 +68,7 @@ export default function Shell({ children, user }: { children: React.ReactNode; u
     <aside className={cls("flex h-full flex-col border-r border-line bg-surface", mini ? "w-[4.25rem]" : "w-64")}>
       <div className={cls("flex items-center border-b border-line", mini ? "flex-col gap-1.5 px-0 py-3" : "gap-2 px-4 py-4")}>
         <Link href="/" className={cls("flex items-center", mini ? "justify-center" : "min-w-0 flex-1 gap-3")} title="Học liệu Việt Anh">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-brand text-on-brand shadow-sm"><LeafMark className="h-6 w-6" /></span>
+          <LogoBadge size="md" className="shadow-sm" />
           {!mini && (
             <span className="leading-tight">
               <span className="block text-[15px] font-bold text-ink">Học liệu Việt Anh</span>
@@ -164,7 +156,7 @@ export default function Shell({ children, user }: { children: React.ReactNode; u
         <div className="sticky top-0 flex items-center gap-3 border-b border-line bg-surface/85 px-4 py-2.5 backdrop-blur lg:hidden" style={{ zIndex: 20 }}>
           <button onClick={() => setOpen(true)} className="rounded-lg border border-line p-1.5 text-ink" aria-label="Mở menu"><Menu size={18} /></button>
           {showBack && <button onClick={goBack} aria-label="Quay lại" className="rounded-lg border border-line p-1.5 text-ink-2 transition hover:text-brand"><ArrowLeft size={18} /></button>}
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-on-brand"><LeafMark className="h-4 w-4" /></span>
+          <LogoBadge size="sm" />
           <span className="text-sm font-bold text-ink">Học liệu Việt Anh</span>
         </div>
         <main className={pathname === "/graph" || pathname === "/tree" ? "w-full overflow-hidden" : "mx-auto max-w-6xl p-4 lg:p-8"}>{children}</main>

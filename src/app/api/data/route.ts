@@ -6,6 +6,7 @@ import {
 import { verifyToken, SESSION_COOKIE } from "@/lib/auth";
 import { instructionPack, hasAiKey, aiModel, aiKeySource, aiKey } from "@/lib/ai";
 import { tutorConfig, tutorConfigured } from "@/lib/tutor-push";
+import { callbackUrl, oidcConfig, oidcEnabled, originOf, providerLabel } from "@/lib/oidc";
 import { flashcardsForAtom } from "@/lib/flashcards";
 import { dueOf } from "@/lib/srs";
 
@@ -45,7 +46,8 @@ export async function GET(req: NextRequest) {
   const view = req.nextUrl.searchParams.get("view") || "";
   const id = req.nextUrl.searchParams.get("id") || "";
 
-  if (view === "me") return NextResponse.json({ user });
+  // "me" là view DUY NHẤT không cần đăng nhập — trang login hỏi luôn ở đây xem có bật nút Google không
+  if (view === "me") return NextResponse.json({ user, sso: oidcEnabled(db) ? { label: providerLabel(oidcConfig(db)) } : null });
   if (!user) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
 
   // Cổng quyền đọc theo view (đối xứng với chốt quyền ghi ở /api/action)
@@ -336,8 +338,9 @@ export async function GET(req: NextRequest) {
     case "settings": {
       const sampleAtom = db.tree.find((n) => n.kind === "atom")!;
       // KHÔNG BAO GIỜ trả key/mật khẩu thô về client — chỉ trạng thái + vài ký tự nhận diện
-      const { anthropicApiKey: _k, tutorPassword: _tp, tutorJwt: _tj, ...safeSettings } = db.settings;
-      void _k; void _tp; void _tj;
+      const { anthropicApiKey: _k, tutorPassword: _tp, tutorJwt: _tj, googleClientSecret: _gs, ...safeSettings } = db.settings;
+      void _k; void _tp; void _tj; void _gs;
+      const gcfg = oidcConfig(db);
       const k = aiKey(db);
       const tcfg = tutorConfig(db);
       // keyTail (4 ký tự cuối) CHỈ cho quản trị — người khác dùng được AI nhưng KHÔNG xem key (kể cả phần đuôi).
@@ -346,6 +349,13 @@ export async function GET(req: NextRequest) {
         settings: safeSettings, packPreview: instructionPack(db, sampleAtom, 2),
         hasKey: hasAiKey(db), model: aiModel(db), keySource: aiKeySource(db), keyTail: k && isAdmin ? k.slice(-4) : "",
         tutor: { url: tcfg.url, email: tcfg.email || "", configured: tutorConfigured(db), hasPassword: !!db.settings.tutorPassword, hasJwt: !!db.settings.tutorJwt },
+        // Đăng nhập một lần: client secret KHÔNG trả thô, chỉ báo đã có hay chưa.
+        // callbackUrl là địa chỉ quản trị dán vào Google Cloud Console (hoặc nộp cho Hub sau này).
+        sso: {
+          clientId: gcfg.clientId, hasSecret: !!gcfg.clientSecret, domains: gcfg.domains.join(", "),
+          enabled: oidcEnabled(db), source: gcfg.source, callbackUrl: callbackUrl(originOf(req)),
+          discoveryUrl: gcfg.discoveryUrl, provider: providerLabel(gcfg),
+        },
       });
     }
     case "preflight": {
