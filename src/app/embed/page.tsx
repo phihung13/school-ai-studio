@@ -8,11 +8,17 @@
 //   2. postMessage "embed:ready" kèm code_challenge sang Hub
 //   3. Hub gửi lại "embed:token" kèm code  → BẮT BUỘC kiểm event.origin, đây là chốt chống giả mạo
 //   4. gửi code + verifier về máy chủ Factory để đổi token (server-to-server với Hub)
+//
+// GỬI LẶP, KHÔNG GỬI MỘT PHÁT: bên con không có cách nào biết bên cha đã gắn listener chưa. Bản đầu
+// chỉ bắn "embed:ready" đúng một lần lúc mount — đo được là có bắn, đúng target — nhưng Hub gắn
+// listener sau đó nên không bao giờ thấy. Giờ nhắc lại đến khi Hub đáp hoặc hết hạn.
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { HomeContent } from "@/app/page";
 import { PageLoading } from "@/components/ui";
 
 const HUB_ORIGIN = "https://hub.truongvietanh.com";
+const NHAC_MOI_MS = 700;   // khoảng cách giữa hai lần nhắc
+const NHAC_TOI_DA = 20;    // ~14 giây rồi thôi, đủ cho trang Hub tải xong ngay cả khi mạng chậm
 
 const b64url = (bytes: Uint8Array): string =>
   btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -29,26 +35,34 @@ export default function EmbedPage() {
   const [trangThai, setTrangThai] = useState<Trangthai>("dangCho");
   const [loi, setLoi] = useState("");
   const verifierRef = useRef<string>("");   // không đưa vào state: tránh lọt ra React DevTools/log
+  const hubDaDapRef = useRef(false);
+
+  const guiHub = useCallback((msg: Record<string, unknown>) => {
+    if (window.parent === window) return;
+    window.parent.postMessage(msg, HUB_ORIGIN);
+  }, []);
 
   // Hub tự chỉnh chiều cao khung theo số này, khỏi cuộn hai lớp
   const baoChieuCao = useCallback(() => {
-    if (window.parent === window) return;
-    window.parent.postMessage({ type: "embed:resize", height: document.body.scrollHeight }, HUB_ORIGIN);
-  }, []);
+    guiHub({ type: "embed:resize", height: document.body.scrollHeight });
+  }, [guiHub]);
 
   useEffect(() => {
-    let huy = false;
+    // Mở thẳng địa chỉ này ngoài Hub: route /embed CHỈ dành cho khung nhúng, nên nói rõ và dừng —
+    // kể cả khi trình duyệt còn phiên Factory. (Bản đầu vẫn dựng nội dung nếu có phiên, khiến báo
+    // cáo "mở trực tiếp sẽ thấy màn hướng dẫn" sai với thực tế của người đang đăng nhập.)
+    if (window.parent === window) { setTrangThai("ngoaiHub"); return; }
 
-    // Đã có phiên sẵn (mở lại trong cùng khung) thì khỏi xin mã mới
-    fetch("/api/data?view=me", { credentials: "include" })
-      .then((r) => r.json())
-      .then((d) => { if (!huy && d.user) setTrangThai("sanSang"); })
-      .catch(() => {});
+    let huy = false;
+    let nhacTimer: ReturnType<typeof setInterval> | null = null;
+    const dungNhac = () => { if (nhacTimer) { clearInterval(nhacTimer); nhacTimer = null; } };
 
     const nhan = async (event: MessageEvent) => {
       // CHỐT CHẶN: chỉ nghe Hub. Bỏ qua im lặng mọi nguồn khác, không phản hồi, không log ra console
       // (log ra là mách cho kẻ dò biết trang này đang chờ gì).
       if (event.origin !== HUB_ORIGIN) return;
+      hubDaDapRef.current = true;   // Hub đã lên tiếng → thôi nhắc
+      dungNhac();
       const data = event.data as { type?: string; code?: string };
       if (data?.type !== "embed:token" || !data.code || !verifierRef.current) return;
       try {
@@ -62,20 +76,36 @@ export default function EmbedPage() {
         if (!huy) { setTrangThai("sanSang"); setTimeout(baoChieuCao, 300); }
       } catch (e) {
         if (!huy) { setLoi(e instanceof Error ? e.message : "Lỗi không rõ"); setTrangThai("loi"); }
+        guiHub({ type: "embed:error", reason: "token_exchange_failed" });
       }
     };
     window.addEventListener("message", nhan);
 
-    // Mở thẳng địa chỉ này ngoài Hub: không có cửa sổ cha để nói chuyện → nói rõ, đừng treo mãi.
-    if (window.parent === window) setTrangThai((cu) => (cu === "sanSang" ? cu : "ngoaiHub"));
-    else newPkce().then(({ verifier, challenge }) => {
+    // Đã có phiên sẵn trong khung này (mở lại lần hai) thì khỏi xin mã mới
+    fetch("/api/data?view=me", { credentials: "include" })
+      .then((r) => r.json())
+      .then((d) => { if (!huy && d.user) { setTrangThai("sanSang"); dungNhac(); } })
+      .catch(() => {});
+
+    newPkce().then(({ verifier, challenge }) => {
       if (huy) return;
       verifierRef.current = verifier;
-      window.parent.postMessage({ type: "embed:ready", codeChallenge: challenge }, HUB_ORIGIN);
+      let lan = 0;
+      const nhac = () => {
+        if (huy || hubDaDapRef.current || lan >= NHAC_TOI_DA) return dungNhac();
+        lan++;
+        guiHub({ type: "embed:ready", codeChallenge: challenge });
+      };
+      nhac();                                   // gửi ngay
+      nhacTimer = setInterval(nhac, NHAC_MOI_MS); // rồi nhắc lại đến khi Hub đáp
+    }).catch(() => {
+      // crypto.subtle vắng mặt (khung sandbox quá chặt) — báo Hub thay vì chết im lặng
+      if (!huy) { setLoi("Trình duyệt chặn hàm mã hoá trong khung nhúng"); setTrangThai("loi"); }
+      guiHub({ type: "embed:error", reason: "pkce_unavailable" });
     });
 
-    return () => { huy = true; window.removeEventListener("message", nhan); };
-  }, [baoChieuCao]);
+    return () => { huy = true; dungNhac(); window.removeEventListener("message", nhan); };
+  }, [baoChieuCao, guiHub]);
 
   useEffect(() => {
     if (trangThai !== "sanSang") return;
