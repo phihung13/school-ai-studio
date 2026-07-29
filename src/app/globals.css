@@ -97,9 +97,23 @@ h1, h2, h3, .font-display {
   border-radius: 2px;
 }
 
+/* ===== Thanh cuộn ===== */
+/* Mặc định của trình duyệt là thanh xám trung tính, lạc hẳn tông xanh của site. Dựng lại: con trượt
+   xanh đậm chạy trên rãnh xanh nhạt, GÓC VUÔNG (không bo) cho ra khối chữ nhật gọn gàng.
+   Firefox không cho tạo hình riêng nên dùng scrollbar-color — ra đúng hai màu, chỉ khác độ bo. */
+* { scrollbar-width: thin; scrollbar-color: var(--color-brand-ink) var(--color-brand-bg); }
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track { background: var(--color-brand-bg); }
+::-webkit-scrollbar-thumb { background: var(--color-brand-ink); border-radius: 0; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-brand-deep); }
+::-webkit-scrollbar-thumb:active { background: var(--color-brand-deep); }
+::-webkit-scrollbar-corner { background: var(--color-brand-bg); }
+
+/* Vùng cuộn bên trong (danh sách, bảng, thanh điều hướng) — cùng tông, mảnh hơn cho khỏi lấn nội dung */
 .scrollthin::-webkit-scrollbar { width: 10px; height: 10px; }
-.scrollthin::-webkit-scrollbar-thumb { background: var(--color-line-strong); border-radius: 10px; border: 3px solid var(--color-canvas); }
-.scrollthin::-webkit-scrollbar-track { background: transparent; }
+.scrollthin::-webkit-scrollbar-thumb { background: var(--color-brand-ink); border-radius: 0; }
+.scrollthin::-webkit-scrollbar-thumb:hover { background: var(--color-brand-deep); }
+.scrollthin::-webkit-scrollbar-track { background: var(--color-brand-bg); }
 
 /* ===== Motion ===== */
 @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
