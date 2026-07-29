@@ -31,6 +31,12 @@ export async function POST(req: NextRequest) {
     // Không truyền expectedState vì luồng nhúng không dùng state (mã đi qua postMessage, không qua URL).
     const relay = new URL(HUB_RELAY);
     relay.searchParams.set("code", code);
+    // Hub khai authorization_response_iss_parameter_supported=true (RFC 9207), nên openid-client ĐÒI
+    // phản hồi phải mang `iss` và tự chặn với "invalid response encountered" TRƯỚC khi gọi mạng nếu
+    // thiếu. Luồng redirect thật có sẵn tham số này trong URL; luồng nhúng nhận mã qua postMessage nên
+    // phải tự đắp lại từ metadata — đây đúng là chỗ không thể bê nguyên logic Đường A sang.
+    const meta = config.serverMetadata();
+    if (meta.authorization_response_iss_parameter_supported) relay.searchParams.set("iss", meta.issuer);
     const tokens = await client.authorizationCodeGrant(config, relay, { pkceCodeVerifier: codeVerifier });
     const c = tokens.claims();
     if (!c) throw new Error("Hub không trả id_token");
