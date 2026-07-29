@@ -32,7 +32,7 @@ function F({ label, hint, value, onChange, rows = 4, isAdmin }: { label: string;
 
 interface TutorStatus { url: string; email: string; configured: boolean; hasPassword: boolean; hasJwt: boolean }
 interface SsoProvider { id: string; label: string; clientId: string; hasSecret: boolean; domains: string; discoveryUrl: string; source: "app" | "env"; sessionMinutes: number }
-interface SsoStatus { enabled: boolean; callbackUrl: string; backchannelLogoutUrl: string; providers: SsoProvider[] }
+interface SsoStatus { enabled: boolean; callbackUrl: string; backchannelLogoutUrl: string; providers: SsoProvider[]; hubEvents: boolean }
 interface SettingsData { settings: Settings; packPreview: string; hasKey: boolean; model: string; keySource: "app" | "env" | null; keyTail: string; tutor: TutorStatus; sso: SsoStatus }
 
 // Model cho dropdown — id model trên OpenRouter (có thể gõ id khác trong tương lai)
@@ -204,6 +204,10 @@ function SsoCard({ sso, isAdmin, onSaved }: { sso: SsoStatus; isAdmin: boolean; 
       {isAdmin && (
         <>
           {sso.providers.map((p) => <ProviderRow key={p.id} p={p} onSaved={onSaved} />)}
+          <p className="mt-3 text-[11px] text-muted">
+            Gửi sự kiện nghiệp vụ về Hub: <b className={sso.hubEvents ? "text-ok" : "text-warn"}>{sso.hubEvents ? "đang bật" : "đang tắt"}</b>
+            {" "}— mỗi lượt gửi duyệt / duyệt / sinh học liệu được tóm tắt gửi sang Hub. Dữ liệu chi tiết vẫn nằm trong Factory.
+          </p>
           <div className="mt-3 space-y-1 text-[11px] text-muted">
             <p>Hai địa chỉ phải nộp khi đăng ký app với nhà cung cấp (bấm để chép):</p>
             {([["Địa chỉ quay về", sso.callbackUrl], ["Đăng xuất từ xa", sso.backchannelLogoutUrl]] as const).map(([ten, url]) => (

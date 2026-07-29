@@ -151,6 +151,8 @@ export interface Settings {
   // cung cấp "google" dựng sẵn — giữ nguyên để bản đang chạy không gãy. Nhiều nhà cung cấp chạy SONG SONG:
   // Hub là đích cuối, Google là đường lùi khi hạ tầng Hub còn tạm.
   oidcDiscoveryUrl?: string;              // ghi đè discovery của nhà cung cấp "google" (hiếm khi cần)
+  // Cổng gửi sự kiện nghiệp vụ về Hub (Đường B). Rỗng = tắt hẳn, app chạy y như cũ.
+  hubEmbedSecret?: string;
   oidcProviders?: OidcProviderConfig[];
   // Bộ đếm ID tuần tự (Studio là bên sinh ID sau đồng nhất KC/Q/E/R). max đã cấp; sinh mới = ++counter.
   idSeq?: { q: number; e: number; r: number; l?: number };

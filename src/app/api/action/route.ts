@@ -12,6 +12,7 @@ import type { Grade } from "ts-fsrs";
 import { makeToken, verifyToken, peekToken, SESSION_COOKIE, DEMO_PASSWORD, hashPw } from "@/lib/auth";
 import { pushAssets, tutorTest, clearTutorToken } from "@/lib/tutor-push";
 import { clearDiscoveryCache, endSessionUrl, oidcEnabled, originOf, providerById, providers } from "@/lib/oidc";
+import { eventId, hubEventsOn, hubSubOf, sendHubEvent } from "@/lib/hub-events";
 
 export const dynamic = "force-dynamic";
 
@@ -213,6 +214,12 @@ export async function POST(req: NextRequest) {
       pkg.history.push({ version: pkg.version, at: pkg.updatedAt, by: who, note: "Gửi duyệt (AI Reviewer đã chấm trước)" });
       logActivity(user.name, "gửi duyệt", `Gói ${pkg.id}`, `/package/${pkg.id}`);
       persist();
+      // Tóm tắt gửi Hub — khoá theo gói+phiên bản+loại việc nên gửi lại bao nhiêu lần cũng một bản ghi
+      sendHubEvent({
+        externalId: eventId("pkg", pkg.id, pkg.version, "submitted"),
+        eventType: "package_submitted", actorUserId: hubSubOf(db, user.id),
+        payload: { package_id: pkg.id, atom_code: atom.code, atom_title: atom.title, level: pkg.level, version: pkg.version, by: user.name, at: pkg.updatedAt },
+      });
       return NextResponse.json({ ok: true, pkg });
     }
     case "decidePackage": {
@@ -235,6 +242,15 @@ export async function POST(req: NextRequest) {
       db.reviews.unshift({ id: uid("rv_"), packageId: pkg.id, at: pkg.updatedAt, by: who, decision, note: cleanNote, aiReport: pkg.aiReport });
       logActivity(user.name, decision === "approved" ? "duyệt Chuẩn trường" : "trả lại", `Gói ${pkg.id}`, `/package/${pkg.id}`);
       persist();
+      {
+        const at = node(db, pkg.atomId);
+        sendHubEvent({
+          externalId: eventId("pkg", pkg.id, pkg.version, decision),
+          eventType: decision === "approved" ? "package_approved" : "package_returned",
+          actorUserId: hubSubOf(db, user.id),
+          payload: { package_id: pkg.id, atom_code: at?.code, atom_title: at?.title, level: pkg.level, version: pkg.version, by: user.name, at: pkg.updatedAt, note: cleanNote || undefined },
+        });
+      }
       return NextResponse.json({ ok: true, pkg });
     }
     case "draftPackage": {
@@ -308,6 +324,11 @@ export async function POST(req: NextRequest) {
       };
       db.assets.push(asset);
       logActivity(user.name, "sinh tài nguyên", `${format} — ${atom.code} mức ${pkg.level}`, `/asset/${asset.id}`);
+      sendHubEvent({
+        externalId: eventId("asset", asset.id),
+        eventType: "asset_generated", actorUserId: hubSubOf(db, user.id),
+        payload: { asset_id: asset.id, package_id: pkg.id, format, atom_code: atom.code, atom_title: atom.title, level: pkg.level, by: user.name, at: asset.createdAt },
+      });
       persist();
       return NextResponse.json({ ok: true, asset });
     }
@@ -582,6 +603,18 @@ export async function POST(req: NextRequest) {
       logActivity(user.name, oidcEnabled(db) ? "bật" : "tắt", `đăng nhập một lần (${pid})`, "/settings?tab=general"); // không log secret
       persist();
       return NextResponse.json({ ok: true, enabled: oidcEnabled(db), providers: providers(db).map((x) => ({ id: x.id, label: x.label, clientId: x.clientId, hasSecret: !!x.clientSecret, domains: x.domains ?? "", discoveryUrl: x.discoveryUrl, source: x.source, sessionMinutes: x.sessionMinutes })) });
+    }
+    case "saveHubEmbed": {
+      // Khai/gỡ cổng gửi sự kiện nghiệp vụ về Hub (Đường B). Gửi chuỗi rỗng = tắt hẳn.
+      if (!isAdmin) return bad("Chỉ quản trị", 403);
+      const { secret } = body as { secret?: string };
+      if (secret !== undefined) {
+        const v = String(secret).trim().slice(0, 200);
+        if (v) db.settings.hubEmbedSecret = v; else delete db.settings.hubEmbedSecret;
+      }
+      logActivity(user.name, hubEventsOn() ? "bật" : "tắt", "gửi sự kiện về Hub", "/settings?tab=general"); // không log secret
+      persist();
+      return NextResponse.json({ ok: true, enabled: hubEventsOn() });
     }
     case "testAiKey": {
       // Gọi thử OpenRouter 1 lượt tí hon: test key VỪA GÕ (chưa lưu) hoặc key đang có hiệu lực

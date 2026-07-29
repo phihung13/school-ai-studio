@@ -35,12 +35,16 @@ function Tile({ cell }: { cell: GradeCell | null }) {
 
 export default function HomePage() {
   const [me, setMe] = useState<User | null>(null);
+  useEffect(() => { getData<{ user: User }>("me").then((d) => setMe(d.user)).catch(() => {}); }, []);
+  return <Shell user={me}><HomeContent /></Shell>;
+}
+
+// Nội dung trang chủ, KHÔNG kèm khung điều hướng. Dùng ở hai nơi: trang chủ thường (bọc trong Shell)
+// và route /embed khi Factory bị nhúng trong Hub (Hub tự vẽ khung + nút quay lại ở ngoài iframe).
+export function HomeContent() {
   const [data, setData] = useState<MapData | null>(null);
-  useEffect(() => {
-    getData<{ user: User }>("me").then((d) => setMe(d.user)).catch(() => {});
-    getData<MapData>("map").then(setData).catch(() => {});
-  }, []);
-  if (!data) return <Shell user={me}><PageLoading /></Shell>;
+  useEffect(() => { getData<MapData>("map").then(setData).catch(() => {}); }, []);
+  if (!data) return <PageLoading />;
 
   const t = data.totals;
   const GRADES = Array.from({ length: 12 }, (_, i) => i + 1); // luôn hiện Lớp 1–12, thiếu data thì ô trống
@@ -54,8 +58,7 @@ export default function HomePage() {
   ];
 
   return (
-    <Shell user={me}>
-      <div className="fade-up">
+    <div className="fade-up">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="font-display text-2xl font-semibold text-ink">Bản đồ tri thức</h1>
@@ -109,8 +112,7 @@ export default function HomePage() {
             </tbody>
           </table>
         </Card>
-        <p className="mt-3 text-xs text-muted">Ô 🟢 mở thẳng <b>đồ thị</b> (có cạnh nối) · ô 🟠 mở <b>cây</b> (có nguyên tử, chưa cạnh) · ô 🔴 chưa phân rã. Demo hiện có: <b className="text-ink-2">Toán 7</b> đủ để trình diễn remediation.</p>
-      </div>
-    </Shell>
+      <p className="mt-3 text-xs text-muted">Ô 🟢 mở thẳng <b>đồ thị</b> (có cạnh nối) · ô 🟠 mở <b>cây</b> (có nguyên tử, chưa cạnh) · ô 🔴 chưa phân rã. Demo hiện có: <b className="text-ink-2">Toán 7</b> đủ để trình diễn remediation.</p>
+    </div>
   );
 }

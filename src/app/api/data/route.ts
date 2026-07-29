@@ -7,6 +7,7 @@ import { verifyToken, SESSION_COOKIE } from "@/lib/auth";
 import { instructionPack, hasAiKey, aiModel, aiKeySource, aiKey } from "@/lib/ai";
 import { tutorConfig, tutorConfigured } from "@/lib/tutor-push";
 import { backchannelLogoutUrl, callbackUrl, oidcEnabled, originOf, providers } from "@/lib/oidc";
+import { hubEventsOn } from "@/lib/hub-events";
 import { flashcardsForAtom } from "@/lib/flashcards";
 import { dueOf } from "@/lib/srs";
 
@@ -344,8 +345,8 @@ export async function GET(req: NextRequest) {
     case "settings": {
       const sampleAtom = db.tree.find((n) => n.kind === "atom")!;
       // KHÔNG BAO GIỜ trả key/mật khẩu thô về client — chỉ trạng thái + vài ký tự nhận diện
-      const { anthropicApiKey: _k, tutorPassword: _tp, tutorJwt: _tj, googleClientSecret: _gs, ...safeSettings } = db.settings;
-      void _k; void _tp; void _tj; void _gs;
+      const { anthropicApiKey: _k, tutorPassword: _tp, tutorJwt: _tj, googleClientSecret: _gs, hubEmbedSecret: _hs, oidcProviders: _op, ...safeSettings } = db.settings;
+      void _k; void _tp; void _tj; void _gs; void _hs; void _op;
       const plist = providers(db);
       const k = aiKey(db);
       const tcfg = tutorConfig(db);
@@ -363,6 +364,8 @@ export async function GET(req: NextRequest) {
             id: p.id, label: p.label, clientId: p.clientId, hasSecret: !!p.clientSecret,
             domains: p.domains ?? "", discoveryUrl: p.discoveryUrl, source: p.source, sessionMinutes: p.sessionMinutes ?? 0,
           })),
+          // Đường B: cổng gửi sự kiện nghiệp vụ về Hub — chỉ báo bật/tắt, không trả secret
+          hubEvents: hubEventsOn(),
         },
       });
     }
