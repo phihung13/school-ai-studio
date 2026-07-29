@@ -40,8 +40,17 @@ export async function POST(req: NextRequest) {
       sid: c.sid ? String(c.sid) : undefined,
     };
   } catch (e) {
-    console.error("[embed] đổi mã thất bại:", e instanceof Error ? e.message : e);
-    return NextResponse.json({ error: "Hub không xác nhận được lượt đăng nhập" }, { status: 401 });
+    // Hub không debug xuyên được vào iframe khác domain, và log container thì hai bên đều không xem
+    // chung được — nên trả NGUYÊN VĂN lỗi của nhà cung cấp về cho trang nhúng hiển thị. Chuỗi này là
+    // mã lỗi giao thức (invalid_grant, invalid_request…), không phải bí mật.
+    const err = e as { error?: string; error_description?: string; message?: string };
+    const chiTiet = [err.error, err.error_description || err.message].filter(Boolean).join(" — ").slice(0, 300);
+    console.error(`[embed] đổi mã thất bại (verifier ${codeVerifier.length} ký tự):`, chiTiet);
+    return NextResponse.json({
+      error: "Hub không xác nhận được lượt đăng nhập",
+      hubError: chiTiet || "không rõ",
+      verifierLength: codeVerifier.length,   // để hai bên khỏi cãi nhau về độ dài PKCE
+    }, { status: 401 });
   }
 
   // Hub không phát email; checkAudience biết điều đó (danh sách domain rỗng = Hub tự bảo đảm người của trường)

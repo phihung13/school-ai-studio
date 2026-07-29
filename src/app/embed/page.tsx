@@ -72,7 +72,9 @@ export default function EmbedPage() {
         });
         const j = await r.json();
         verifierRef.current = "";                       // dùng một lần rồi bỏ
-        if (!r.ok) throw new Error(j.error || "Không đổi được mã");
+        // Hiện NGUYÊN VĂN lỗi của Hub ngay trong khung: đây là thứ duy nhất người bên Hub nhìn thấy
+        // được khi soi iframe khác domain, và nó tiết kiệm cả một vòng thư qua lại.
+        if (!r.ok) throw new Error(j.hubError ? `${j.error} · Hub báo: ${j.hubError} (verifier ${j.verifierLength} ký tự)` : j.error || "Không đổi được mã");
         if (!huy) { setTrangThai("sanSang"); setTimeout(baoChieuCao, 300); }
       } catch (e) {
         if (!huy) { setLoi(e instanceof Error ? e.message : "Lỗi không rõ"); setTrangThai("loi"); }
