@@ -1,5 +1,6 @@
 "use client";
 import React from "react";
+import { diToiTrangDangNhap } from "@/lib/embed-client";
 import {
   FileText, PencilLine, Presentation, ListChecks, Network, Layers, Mic, Clapperboard,
   Loader2, X, type LucideIcon,
@@ -62,7 +63,8 @@ export async function api<T = Record<string, unknown>>(op: string, payload: Reco
 export async function getData<T = Record<string, unknown>>(view: string, params: Record<string, string> = {}): Promise<T> {
   const qs = new URLSearchParams({ view, ...params }).toString();
   const res = await fetch(`/api/data?${qs}`);
-  if (res.status === 401) { window.location.href = "/login"; throw new Error("Chưa đăng nhập"); }
+  // Trong khung nhúng thì về /embed bắt tay lại, không đá sang /login (Google chặn iframe)
+  if (res.status === 401) { diToiTrangDangNhap(); throw new Error("Chưa đăng nhập"); }
   const json = await res.json();
   if (!res.ok) throw new Error(json.error || "Không tải được dữ liệu");
   return json as T;

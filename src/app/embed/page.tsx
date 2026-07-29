@@ -1,7 +1,9 @@
 "use client";
-// ── Factory khi bị NHÚNG trong School Data Hub ─────────────────────────────────────────────────
-// Đây KHÔNG phải trang chủ thường: không sidebar, không nút quay lại — khung điều hướng do Hub vẽ
-// ở ngoài iframe, vẽ thêm ở đây là hai lớp điều hướng chồng nhau.
+// ── Cổng vào khi Factory bị NHÚNG trong School Data Hub ────────────────────────────────────────
+//
+// Route này CHỈ là CỔNG BẮT TAY: xin phiên xong thì giao lại cho app đầy đủ (trang chủ + sidebar +
+// mọi màn hình). Hub vẽ nút thoát ở ngoài khung, còn điều hướng nội bộ vẫn là của Factory — nên
+// không có lý do gì dựng một bản Factory rút gọn chỉ có một view.
 //
 // Luồng lấy phiên (Hub quy định):
 //   1. trang tự sinh PKCE, verifier CHỈ nằm trong bộ nhớ trang này
@@ -13,7 +15,8 @@
 // chỉ bắn "embed:ready" đúng một lần lúc mount — đo được là có bắn, đúng target — nhưng Hub gắn
 // listener sau đó nên không bao giờ thấy. Giờ nhắc lại đến khi Hub đáp hoặc hết hạn.
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { HomeContent } from "@/app/page";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { PageLoading } from "@/components/ui";
 
 const HUB_ORIGIN = "https://hub.truongvietanh.com";
@@ -32,6 +35,7 @@ async function newPkce(): Promise<{ verifier: string; challenge: string }> {
 type Trangthai = "dangCho" | "sanSang" | "loi" | "ngoaiHub";
 
 export default function EmbedPage() {
+  const router = useRouter();
   const [trangThai, setTrangThai] = useState<Trangthai>("dangCho");
   const [loi, setLoi] = useState("");
   const verifierRef = useRef<string>("");   // không đưa vào state: tránh lọt ra React DevTools/log
@@ -45,11 +49,6 @@ export default function EmbedPage() {
     if (window.parent === window) return;
     window.parent.postMessage(msg, HUB_ORIGIN);
   }, []);
-
-  // Hub tự chỉnh chiều cao khung theo số này, khỏi cuộn hai lớp
-  const baoChieuCao = useCallback(() => {
-    guiHub({ type: "embed:resize", height: document.body.scrollHeight });
-  }, [guiHub]);
 
   useEffect(() => {
     // Mở thẳng địa chỉ này ngoài Hub: route /embed CHỈ dành cho khung nhúng, nên nói rõ và dừng —
@@ -81,7 +80,7 @@ export default function EmbedPage() {
         // Hiện NGUYÊN VĂN lỗi của Hub ngay trong khung: đây là thứ duy nhất người bên Hub nhìn thấy
         // được khi soi iframe khác domain, và nó tiết kiệm cả một vòng thư qua lại.
         if (!r.ok) throw new Error(j.hubError ? `${j.error} · Hub báo: ${j.hubError} (verifier ${j.verifierLength} ký tự)` : j.error || "Không đổi được mã");
-        if (!huy) { setTrangThai("sanSang"); setTimeout(baoChieuCao, 300); }
+        if (!huy) { setTrangThai("sanSang"); router.replace("/"); }
       } catch (e) {
         if (!huy) { setLoi(e instanceof Error ? e.message : "Lỗi không rõ"); setTrangThai("loi"); }
         guiHub({ type: "embed:error", reason: "token_exchange_failed" });
@@ -92,7 +91,7 @@ export default function EmbedPage() {
     // Đã có phiên sẵn trong khung này (mở lại lần hai) thì khỏi xin mã mới
     fetch("/api/data?view=me", { credentials: "include" })
       .then((r) => r.json())
-      .then((d) => { if (!huy && d.user) { setTrangThai("sanSang"); dungNhac(); } })
+      .then((d) => { if (!huy && d.user) { setTrangThai("sanSang"); dungNhac(); router.replace("/"); } })
       .catch(() => {});
 
     newPkce().then(({ verifier, challenge }) => {
@@ -113,25 +112,15 @@ export default function EmbedPage() {
     });
 
     return () => { huy = true; dungNhac(); window.removeEventListener("message", nhan); };
-  }, [baoChieuCao, guiHub]);
-
-  useEffect(() => {
-    if (trangThai !== "sanSang") return;
-    baoChieuCao();
-    const ro = new ResizeObserver(baoChieuCao);
-    ro.observe(document.body);
-    return () => ro.disconnect();
-  }, [trangThai, baoChieuCao]);
-
-  if (trangThai === "sanSang") return <main className="p-4 lg:p-6"><HomeContent /></main>;
+  }, [guiHub, router]);
 
   return (
     <main className="grid min-h-[60vh] place-items-center p-6 text-center">
-      {trangThai === "dangCho" && <PageLoading />}
+      {(trangThai === "dangCho" || trangThai === "sanSang") && <PageLoading />}
       {trangThai === "ngoaiHub" && (
         <div className="max-w-sm">
           <p className="text-sm font-semibold text-ink">Trang này dành cho khung nhúng</p>
-          <p className="mt-1 text-sm text-ink-2">Mở Học liệu Việt Anh từ trang chủ Hub, hoặc vào thẳng <a href="/" className="text-brand underline decoration-dotted underline-offset-2">factory.vietanh.org</a>.</p>
+          <p className="mt-1 text-sm text-ink-2">Mở Học liệu Việt Anh từ trang chủ Hub, hoặc vào thẳng <Link href="/" className="text-brand underline decoration-dotted underline-offset-2">factory.vietanh.org</Link>.</p>
         </div>
       )}
       {trangThai === "loi" && (

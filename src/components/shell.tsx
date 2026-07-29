@@ -9,6 +9,7 @@ import {
 import { User, ROLE_LABEL, readableMath } from "@/lib/shared";
 import { api, cls, getData } from "./ui";
 import { LogoBadge } from "./logo";
+import { baoChieuCao, dangNhung } from "@/lib/embed-client";
 
 interface Item { href: string; label: string; icon: LucideIcon; roles?: string[] }
 interface Group { title?: string; items: Item[] }
@@ -33,6 +34,18 @@ let cachedUser: User | null = null;
 export default function Shell({ children, user }: { children: React.ReactNode; user: User | null }) {
   const pathname = usePathname();
   const router = useRouter();
+  // Trong khung nhúng của Hub: GIỮ nguyên mọi điều hướng nội bộ (sidebar, quay lại, chuyển màn) —
+  // Hub chỉ vẽ nút THOÁT ở ngoài khung. Thứ duy nhất phải bỏ là nút Đăng xuất: phiên do Hub cấp,
+  // đăng xuất ở đây sẽ kết thúc luôn phiên Hub và hất người dùng ra khỏi cả siêu ứng dụng.
+  const [nhung, setNhung] = useState(false);
+  useEffect(() => {
+    if (!dangNhung()) return;
+    setNhung(true);
+    baoChieuCao();
+    const ro = new ResizeObserver(() => baoChieuCao());
+    ro.observe(document.body);
+    return () => ro.disconnect();
+  }, []);
   const [open, setOpen] = useState(false);
   const showBack = pathname !== "/" && pathname !== "/login";
   const goBack = () => { if (typeof window !== "undefined" && window.history.length > 1) router.back(); else router.push("/"); };
@@ -133,7 +146,7 @@ export default function Shell({ children, user }: { children: React.ReactNode; u
                   <p className="truncate text-sm font-semibold text-ink">{u.name}</p>
                   <p className="truncate text-[11px] text-muted">{ROLE_LABEL[u.role]}{u.subject ? ` · ${u.subject}` : ""}</p>
                 </div>
-                <button title="Đăng xuất" aria-label="Đăng xuất" className="rounded-lg p-1.5 text-muted transition hover:bg-line hover:text-ink"
+                {!nhung && <button title="Đăng xuất" aria-label="Đăng xuất" className="rounded-lg p-1.5 text-muted transition hover:bg-line hover:text-ink"
                   onClick={async () => {
                     cachedUser = null;
                     // Phiên đến từ một nhà cung cấp thì phải thoát cả bên đó, không chỉ xoá cookie của app —
@@ -142,7 +155,7 @@ export default function Shell({ children, user }: { children: React.ReactNode; u
                     try { sessionStorage.removeItem("va_silent"); } catch { /* ignore */ }
                     if (r?.endSessionUrl) window.location.href = r.endSessionUrl;
                     else router.push("/login");
-                  }}><LogOut size={16} /></button>
+                  }}><LogOut size={16} /></button>}
               </>
             )}
           </div>
