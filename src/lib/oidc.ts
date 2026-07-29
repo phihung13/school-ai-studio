@@ -129,9 +129,13 @@ export async function startLogin(
   const params: Record<string, string> = {
     redirect_uri: callbackUrl(origin), scope: p.scope || "openid profile", state,
     code_challenge: challenge, code_challenge_method: "S256",
-    // silent = gia hạn im lặng: nhà cung cấp còn phiên thì trả về ngay, hết thì báo login_required
-    prompt: opts.silent ? "none" : "select_account",
   };
+  // `prompt` KHÔNG phải chỗ để đoán: Hub trả invalid_request cho "select_account" (nó chỉ nhận
+  // login/consent/none theo OIDC core). Chỉ xin select_account khi nhà cung cấp khai là hỗ trợ,
+  // hoặc khi đó là Google — nơi ta đã biết chắc. "none" thì mọi nhà cung cấp OIDC đều phải nhận.
+  const supported = config.serverMetadata().prompt_values_supported as string[] | undefined;
+  if (opts.silent) params.prompt = "none";
+  else if (supported ? supported.includes("select_account") : p.id === "google") params.prompt = "select_account";
   // hd chỉ là GỢI Ý giao diện của Google (mở sẵn tài khoản trường). Hàng rào thật ở checkAudience().
   if (p.id === "google" && p.domainList.length === 1) params.hd = p.domainList[0];
   return {

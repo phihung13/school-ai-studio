@@ -14,6 +14,7 @@ const SSO_ERR: Record<string, string> = {
   "chua-cau-hinh": "Quản trị chưa bật đăng nhập một lần cho hệ thống.",
   "phien-het-han": "Lượt đăng nhập đã hết hạn. Bấm lại nút ở trên giúp mình nhé.",
   "google-tu-choi": "Nhà cung cấp không xác nhận được tài khoản. Thử lại lần nữa xem sao.",
+  "nha-cung-cap-tu-choi": "Nhà cung cấp từ chối lượt đăng nhập này. Báo quản trị kiểm tra cấu hình giúp bạn.",
   "email-chua-xac-thuc": "Email của tài khoản này chưa được nhà cung cấp xác thực.",
   huy: "Bạn đã huỷ lượt đăng nhập.",
 };

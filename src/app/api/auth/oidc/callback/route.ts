@@ -25,11 +25,18 @@ export async function GET(req: NextRequest) {
 
   const hs = readHandshake(req.cookies.get(OIDC_COOKIE)?.value);
   const err = req.nextUrl.searchParams.get("error");
-  // prompt=none mà nhà cung cấp hết phiên → login_required: đây là đường bình thường của gia hạn im
-  // lặng, không phải sự cố; đưa người dùng về trang đăng nhập, đừng doạ họ bằng thông báo lỗi.
-  if (err) return err === "login_required" || err === "interaction_required"
-    ? NextResponse.redirect(`${origin}/login`)
-    : fail("huy");
+  if (err) {
+    // prompt=none mà nhà cung cấp hết phiên → login_required: đường bình thường của gia hạn im lặng,
+    // không phải sự cố; đưa người dùng về trang đăng nhập, đừng doạ họ bằng thông báo lỗi.
+    if (["login_required", "interaction_required", "consent_required", "account_selection_required"].includes(err)) {
+      return NextResponse.redirect(`${origin}/login`);
+    }
+    if (err === "access_denied") return fail("huy"); // người dùng tự bấm Huỷ
+    // Còn lại là app gửi sai yêu cầu (tham số nhà cung cấp không nhận, client sai…) — lỗi của mình,
+    // phải log đủ để sửa, và nói thật với người dùng thay vì đổ cho họ "đã huỷ".
+    console.error(`[oidc] ${hs?.providerId ?? "?"} từ chối: ${err} — ${req.nextUrl.searchParams.get("error_description") ?? ""}`);
+    return fail("nha-cung-cap-tu-choi");
+  }
   if (!hs) return fail("phien-het-han");
   const p = providerById(db, hs.providerId);
   if (!p) return fail("chua-cau-hinh");
