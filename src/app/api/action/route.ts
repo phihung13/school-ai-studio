@@ -9,9 +9,9 @@ import { newKC, newR } from "@/lib/ids";
 import { flashcardsForAtom } from "@/lib/flashcards";
 import { gradeCard } from "@/lib/srs";
 import type { Grade } from "ts-fsrs";
-import { makeToken, verifyToken, SESSION_COOKIE, DEMO_PASSWORD, hashPw } from "@/lib/auth";
+import { makeToken, verifyToken, peekToken, SESSION_COOKIE, DEMO_PASSWORD, hashPw } from "@/lib/auth";
 import { pushAssets, tutorTest, clearTutorToken } from "@/lib/tutor-push";
-import { clearDiscoveryCache, oidcConfig, oidcEnabled } from "@/lib/oidc";
+import { clearDiscoveryCache, endSessionUrl, oidcEnabled, originOf, providerById, providers } from "@/lib/oidc";
 
 export const dynamic = "force-dynamic";
 
@@ -154,8 +154,14 @@ export async function POST(req: NextRequest) {
     return res;
   }
   if (op === "logout") {
-    const res = NextResponse.json({ ok: true });
-    res.cookies.set(SESSION_COOKIE, "", { maxAge: 0, path: "/" });
+    // Xoá cookie phía app là CHƯA đủ: nếu phiên đến từ một nhà cung cấp, phải kết thúc cả phiên bên
+    // đó, nếu không lần bấm đăng nhập kế tiếp sẽ vào lại im lặng và người dùng tưởng chưa thoát được.
+    const peek = peekToken(req.cookies.get(SESSION_COOKIE)?.value);
+    const idp = peek?.p ? providerById(db, peek.p) : undefined;
+    const origin = originOf(req);
+    const endUrl = idp ? await endSessionUrl(idp, origin, req.cookies.get("vaks_idt")?.value) : null;
+    const res = NextResponse.json({ ok: true, endSessionUrl: endUrl });
+    for (const c of [SESSION_COOKIE, "vaks_idt"]) res.cookies.set(c, "", { maxAge: 0, path: "/" });
     return res;
   }
 
@@ -528,29 +534,54 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, hasKey: !!kNow, keyTail: kNow ? kNow.slice(-4) : "", model: aiModel(db) });
     }
     case "saveSso": {
-      // Bật/tắt đăng nhập một lần từ UI Cài đặt — có hiệu lực NGAY. Gửi chuỗi rỗng = gỡ.
+      // Khai/gỡ một nhà cung cấp đăng nhập từ UI Cài đặt — có hiệu lực NGAY. Gửi chuỗi rỗng = gỡ.
+      // id "google" ghi vào các trường googleClientId/Secret/Domains có sẵn (giữ khuôn cũ, không gãy
+      // bản đang chạy); mọi id khác ("hub"…) nằm trong mảng settings.oidcProviders.
       if (!isAdmin) return bad("Chỉ quản trị", 403);
-      const { clientId, clientSecret, domains } = body as { clientId?: string; clientSecret?: string; domains?: string };
-      if (clientId !== undefined) {
-        const v = String(clientId).trim().slice(0, 200);
-        if (v && !/\.apps\.googleusercontent\.com$/.test(v)) return bad("Client ID không đúng dạng — phải kết thúc bằng .apps.googleusercontent.com");
-        if (v) db.settings.googleClientId = v; else delete db.settings.googleClientId;
+      const b = body as { id?: string; label?: string; discoveryUrl?: string; clientId?: string; clientSecret?: string; domains?: string; scope?: string; sessionMinutes?: number };
+      const pid = (b.id || "google").trim();
+      const clean = (v: string | undefined, max = 200) => v === undefined ? undefined : String(v).trim().slice(0, max);
+
+      const domainList = b.domains === undefined ? undefined
+        : String(b.domains).split(/[,;\s]+/).map((d) => d.trim().toLowerCase().replace(/^@/, "")).filter(Boolean);
+      if (domainList?.some((d) => !/^[a-z0-9.-]+\.[a-z]{2,}$/.test(d))) return bad("Domain không hợp lệ — ví dụ đúng: truongvietanh.com");
+
+      if (pid === "google") {
+        const cid = clean(b.clientId);
+        if (cid !== undefined) {
+          if (cid && !/\.apps\.googleusercontent\.com$/.test(cid)) return bad("Client ID không đúng dạng — phải kết thúc bằng .apps.googleusercontent.com");
+          if (cid) db.settings.googleClientId = cid; else delete db.settings.googleClientId;
+        }
+        const sec = clean(b.clientSecret);
+        if (sec !== undefined) { if (sec) db.settings.googleClientSecret = sec; else delete db.settings.googleClientSecret; }
+        if (domainList !== undefined) { if (domainList.length) db.settings.googleDomains = domainList.join(", "); else delete db.settings.googleDomains; }
+      } else {
+        const list = [...(db.settings.oidcProviders ?? [])];
+        const i = list.findIndex((x) => x.id === pid);
+        const cur = i >= 0 ? list[i] : undefined;
+        const cid = clean(b.clientId) ?? cur?.clientId ?? "";
+        const sec = clean(b.clientSecret) ?? cur?.clientSecret ?? "";
+        if (!cid || !sec) {                       // gỡ hẳn khi thiếu một trong hai
+          if (i >= 0) list.splice(i, 1);
+        } else {
+          const disc = clean(b.discoveryUrl, 300) ?? cur?.discoveryUrl ?? "";
+          if (!/^https:\/\//.test(disc)) return bad("Discovery URL phải bắt đầu bằng https://");
+          const next = {
+            id: pid, label: clean(b.label, 60) || cur?.label || pid,
+            discoveryUrl: disc, clientId: cid, clientSecret: sec,
+            scope: clean(b.scope, 200) ?? cur?.scope ?? "openid profile",
+            domains: domainList ? domainList.join(", ") : cur?.domains ?? "",
+            sessionMinutes: Number(b.sessionMinutes ?? cur?.sessionMinutes ?? 15) || 15,
+          };
+          if (i >= 0) list[i] = next; else list.push(next);
+        }
+        if (list.length) db.settings.oidcProviders = list; else delete db.settings.oidcProviders;
       }
-      if (clientSecret !== undefined) {
-        const v = String(clientSecret).trim().slice(0, 200);
-        if (v) db.settings.googleClientSecret = v; else delete db.settings.googleClientSecret;
-      }
-      if (domains !== undefined) {
-        // chuẩn hoá: bỏ @ thừa, gộp khoảng trắng, hạ chữ thường — đây là hàng rào duy nhất chặn người lạ
-        const list = String(domains).split(/[,;\s]+/).map((d) => d.trim().toLowerCase().replace(/^@/, "")).filter(Boolean);
-        if (list.some((d) => !/^[a-z0-9.-]+\.[a-z]{2,}$/.test(d))) return bad("Domain không hợp lệ — ví dụ đúng: truongvietanh.com");
-        if (list.length) db.settings.googleDomains = list.join(", "); else delete db.settings.googleDomains;
-      }
+
       clearDiscoveryCache(); // đổi cấu hình là quên bản discovery đang nhớ, khỏi phải khởi động lại
-      logActivity(user.name, oidcEnabled(db) ? "bật" : "tắt", "đăng nhập một lần", "/settings?tab=general"); // không log secret
+      logActivity(user.name, oidcEnabled(db) ? "bật" : "tắt", `đăng nhập một lần (${pid})`, "/settings?tab=general"); // không log secret
       persist();
-      const g = oidcConfig(db);
-      return NextResponse.json({ ok: true, enabled: oidcEnabled(db), clientId: g.clientId, hasSecret: !!g.clientSecret, domains: g.domains.join(", "), source: g.source });
+      return NextResponse.json({ ok: true, enabled: oidcEnabled(db), providers: providers(db).map((x) => ({ id: x.id, label: x.label, clientId: x.clientId, hasSecret: !!x.clientSecret, domains: x.domains ?? "", discoveryUrl: x.discoveryUrl, source: x.source, sessionMinutes: x.sessionMinutes })) });
     }
     case "testAiKey": {
       // Gọi thử OpenRouter 1 lượt tí hon: test key VỪA GÕ (chưa lưu) hoặc key đang có hiệu lực

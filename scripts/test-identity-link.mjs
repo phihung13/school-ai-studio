@@ -7,12 +7,14 @@
 //   3. Đổi nhà cung cấp (Google → Hub): subject khác hẳn nhưng vẫn ra đúng người, nhờ cột issuer.
 //   4. Email đã gắn định danh khác của cùng nhà cung cấp thì bị CHẶN.
 //   5. Tài khoản ngoài trường bị từ chối; claim hd giả cũng không lọt.
-import { linkIdentity } from "../src/lib/identity-link.ts";
+import { linkIdentity, revokeSessions, userIdFromLogoutToken } from "../src/lib/identity-link.ts";
 import { checkAudience } from "../src/lib/oidc.ts";
 
 const GOOGLE = "https://accounts.google.com";
 const HUB = "https://hub.truongvietanh.com/oidc";
-const cfg = { discoveryUrl: "", clientId: "", clientSecret: "", domains: ["truongvietanh.com"], source: "app" };
+// Google: có email + đòi claim hd. Hub: KHÔNG phát email, không lọc domain (domainList rỗng).
+const cfg = { id: "google", label: "Google", discoveryUrl: "", clientId: "", clientSecret: "", domains: "truongvietanh.com", domainList: ["truongvietanh.com"], source: "app" };
+const cfgHub = { id: "hub", label: "tài khoản trường", discoveryUrl: "", clientId: "", clientSecret: "", domains: "", domainList: [], source: "app" };
 
 let pass = 0, fail = 0;
 const check = (ten, dieuKien) => { if (dieuKien) { pass++; console.log("  ✓", ten); } else { fail++; console.log("  ✗", ten); } };
@@ -73,7 +75,58 @@ console.log("5. Hàng rào domain (kiểm ở phía máy chủ)");
   check("email chưa xác thực → chặn", !checkAudience(cfg, claims({ emailVerified: false })).ok);
   check("claim hd của tổ chức khác → chặn dù email trông giống", !checkAudience(cfg, claims({ hd: "truonggiaokhac.com" })).ok);
   check("domain lồng giả mạo → chặn", !checkAudience(cfg, claims({ email: "x@truongvietanh.com.evil.net" })).ok);
-  check("chưa khai domain nào → chặn hết (mặc định an toàn)", !checkAudience({ ...cfg, domains: [] }, claims()).ok);
+  check("Hub không khai domain → cho qua (Hub đã xác thực người của trường)", checkAudience(cfgHub, { ...claims({ hd: undefined, email: undefined }), issuer: HUB }).ok);
+}
+
+console.log("6. Nhà cung cấp KHÔNG phát email (School Data Hub)");
+{
+  const db = newDb();
+  const a = linkIdentity(db, { issuer: HUB, subject: "hub-uuid-1", name: "Cô Thu", sid: "sid-1" });
+  const b = linkIdentity(db, { issuer: HUB, subject: "hub-uuid-1", name: "Cô Thu", sid: "sid-2" });
+  check("lần đầu mở tài khoản mới, không cần email", a.ok && a.created && !db.users[0].email);
+  check("lần hai vào lại đúng tài khoản đó", b.ok && b.user.id === a.user.id && db.users.length === 1);
+  check("sid mới được ghi đè để tra ngược lúc đăng xuất từ xa", db.identityLinks[0].lastSid === "sid-2");
+  check("vẫn chỉ một dòng liên kết", db.identityLinks.length === 1);
+}
+
+console.log("7. Nút \"Liên kết tài khoản\" — người đã có tài khoản tự nối");
+{
+  const cu = { id: "qt.hung", name: "Anh Hùng", role: "admin", title: "Quản trị học thuật", email: "hung@truongvietanh.com" };
+  const db = newDb([cu]);
+  const r = linkIdentity(db, { issuer: HUB, subject: "hub-uuid-9", name: "Nguyễn Phi Hùng" }, { linkTo: "qt.hung" });
+  check("gắn vào đúng tài khoản đang đăng nhập", r.ok && r.user.id === "qt.hung");
+  check("KHÔNG đẻ tài khoản thứ hai", db.users.length === 1);
+  check("giữ nguyên vai quản trị", db.users[0].role === "admin");
+  const lai = linkIdentity(db, { issuer: HUB, subject: "hub-uuid-9", name: "Nguyễn Phi Hùng" });
+  check("lần sau đăng nhập thẳng vào tài khoản đã nối", lai.ok && lai.user.id === "qt.hung" && db.users.length === 1);
+  const nguoiKhac = { id: "gv.lan", name: "Cô Lan", role: "teacher", title: "Giáo viên" };
+  db.users.push(nguoiKhac);
+  const cheo = linkIdentity(db, { issuer: HUB, subject: "hub-uuid-khac", name: "Ai đó" }, { linkTo: "qt.hung" });
+  check("một tài khoản không gắn được hai định danh cùng nhà cung cấp", !cheo.ok && cheo.err === "khoa-khac-nguoi");
+}
+
+console.log("8. Không cho mở tài khoản mới khi bị cấm");
+{
+  const db = newDb();
+  const r = linkIdentity(db, { issuer: HUB, subject: "hub-uuid-2", name: "Người lạ" }, { allowCreate: false });
+  check("bị từ chối", !r.ok && r.err === "khong-co-tai-khoan");
+  check("không có tài khoản nào được tạo", db.users.length === 0);
+}
+
+console.log("9. Đăng xuất từ xa (back-channel logout)");
+{
+  const db = newDb();
+  linkIdentity(db, { issuer: HUB, subject: "hub-uuid-3", name: "Thầy Bình", sid: "sid-abc" });
+  const uid = db.users[0].id;
+  check("tra ra người từ sub", userIdFromLogoutToken(db, HUB, "hub-uuid-3", undefined) === uid);
+  check("tra ra người từ sid khi logout_token không có sub", userIdFromLogoutToken(db, HUB, undefined, "sid-abc") === uid);
+  check("nhà cung cấp khác thì không tra nhầm", userIdFromLogoutToken(db, GOOGLE, "hub-uuid-3", "sid-abc") === null);
+  const truoc = Date.now();
+  revokeSessions(db, uid, new Date(truoc).toISOString());
+  check("đã đóng mốc thu hồi phiên", !!db.users[0].sessionsValidFrom);
+  // verifyToken sẽ so: token phát TRƯỚC mốc là chết, phát SAU mốc vẫn sống
+  check("token cũ (phát trước mốc) bị coi là hết hiệu lực", truoc - 1000 < Date.parse(db.users[0].sessionsValidFrom));
+  check("token cấp lại sau khi đăng nhập lại vẫn sống", truoc + 1000 > Date.parse(db.users[0].sessionsValidFrom));
 }
 
 console.log(`\n${pass} đạt · ${fail} hỏng`);

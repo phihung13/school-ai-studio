@@ -60,13 +60,24 @@ export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
-  const [sso, setSso] = useState<{ label: string } | null>(null);
+  const [sso, setSso] = useState<{ id: string; label: string }[]>([]);
   const [toast, show] = useToast();
 
   useEffect(() => {
     // hỏi server có bật SSO không (view "me" không cần đăng nhập) + báo lỗi lượt Google vừa hỏng
-    fetch("/api/data?view=me").then((r) => r.json()).then((d) => setSso(d.sso ?? null)).catch(() => {});
     const err = new URLSearchParams(window.location.search).get("err");
+    fetch("/api/data?view=me").then((r) => r.json()).then((d) => {
+      const list: { id: string; label: string }[] = Array.isArray(d.sso) ? d.sso : [];
+      setSso(list);
+      // Gia hạn im lặng: phiên qua Hub chỉ sống 15 phút theo quy định, nhưng nếu bên Hub vẫn còn
+      // phiên thì người dùng không việc gì phải bấm lại — chuyển hướng prompt=none, hỏng thì Hub
+      // trả login_required và ta quay về đúng trang này.
+      const last = document.cookie.match(/(?:^|;\s*)vaks_idp=([^;]+)/)?.[1];
+      if (!err && !d.user && last && list.some((x) => x.id === last) && !sessionStorage.getItem("va_silent")) {
+        sessionStorage.setItem("va_silent", "1");
+        window.location.href = `/api/auth/oidc?p=${encodeURIComponent(last)}&silent=1`;
+      }
+    }).catch(() => {});
     if (err) {
       show(SSO_ERR[err] || "Không đăng nhập được bằng tài khoản trường.", "err");
       window.history.replaceState(null, "", "/login"); // dọn URL để F5 không hiện lại lỗi cũ
@@ -111,12 +122,16 @@ export default function LoginPage() {
             <p className="mt-1 text-sm text-ink-2">Nhập tài khoản của bạn để vào Học liệu Việt Anh.</p>
           </div>
 
-          {sso && (
+          {sso.length > 0 && (
             <>
-              <a href="/api/auth/oidc"
-                className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-line-strong bg-surface py-2.5 text-sm font-medium text-ink transition-colors hover:bg-surface-2 active:translate-y-px">
-                {sso.label === "Google" ? <GoogleMark /> : <LogoBadge size="sm" />}Tiếp tục với {sso.label}
-              </a>
+              <div className="space-y-2.5">
+                {sso.map((p) => (
+                  <a key={p.id} href={`/api/auth/oidc?p=${encodeURIComponent(p.id)}`}
+                    className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-line-strong bg-surface py-2.5 text-sm font-medium text-ink transition-colors hover:bg-surface-2 active:translate-y-px">
+                    {p.id === "google" ? <GoogleMark /> : <LogoBadge size="sm" />}Tiếp tục với {p.label}
+                  </a>
+                ))}
+              </div>
               <div className="my-5 flex items-center gap-3">
                 <span className="h-px flex-1 bg-line" />
                 <span className="text-xs text-muted">hoặc dùng mật khẩu</span>

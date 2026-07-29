@@ -134,7 +134,15 @@ export default function Shell({ children, user }: { children: React.ReactNode; u
                   <p className="truncate text-[11px] text-muted">{ROLE_LABEL[u.role]}{u.subject ? ` · ${u.subject}` : ""}</p>
                 </div>
                 <button title="Đăng xuất" aria-label="Đăng xuất" className="rounded-lg p-1.5 text-muted transition hover:bg-line hover:text-ink"
-                  onClick={async () => { cachedUser = null; await api("logout"); router.push("/login"); }}><LogOut size={16} /></button>
+                  onClick={async () => {
+                    cachedUser = null;
+                    // Phiên đến từ một nhà cung cấp thì phải thoát cả bên đó, không chỉ xoá cookie của app —
+                    // nếu không, lần bấm đăng nhập kế tiếp vào lại im lặng và người dùng tưởng chưa thoát được.
+                    const r = await api<{ endSessionUrl?: string | null }>("logout").catch(() => null);
+                    try { sessionStorage.removeItem("va_silent"); } catch { /* ignore */ }
+                    if (r?.endSessionUrl) window.location.href = r.endSessionUrl;
+                    else router.push("/login");
+                  }}><LogOut size={16} /></button>
               </>
             )}
           </div>

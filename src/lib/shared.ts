@@ -1,12 +1,28 @@
 // Kiểu dữ liệu + nhãn dùng chung cho cả server và client (không import module Node)
 
 export type Role = "teacher" | "lead" | "admin" | "principal";
-export interface User { id: string; name: string; role: Role; subject?: string; title: string; email?: string; password?: string; }
+export interface User {
+  id: string; name: string; role: Role; subject?: string; title: string; email?: string; password?: string;
+  // Mốc thu hồi phiên: token phát TRƯỚC mốc này coi như hết hiệu lực. Back-channel logout của nhà cung cấp
+  // đẩy mốc lên hiện tại → mọi phiên chết ngay, dù phiên của app là JWT tự cuộn (không có kho phiên).
+  sessionsValidFrom?: string;
+}
+
+// Một nhà cung cấp định danh. domains rỗng = KHÔNG lọc theo domain email (đúng cho Hub: Hub đã xác thực
+// người của trường rồi, và nó không phát email nên chẳng có gì để lọc).
+export interface OidcProviderConfig {
+  id: string; label: string; discoveryUrl: string; clientId: string; clientSecret: string;
+  scope?: string; domains?: string; sessionMinutes?: number;
+}
 
 // Liên kết định danh ngoài (OIDC) → tài khoản trong app. Khoá theo CẢ HAI: (issuer, subject).
 // Vì sao không khoá mỗi "subject": đổi nhà cung cấp (Google → School Data Hub) thì subject khác hẳn;
 // có cột issuer thì chỉ cần thêm một dòng mới, tài khoản và dữ liệu cũ vẫn dính nguyên chủ.
-export interface IdentityLink { id: string; userId: string; issuer: string; subject: string; linkedAt: string }
+export interface IdentityLink {
+  id: string; userId: string; issuer: string; subject: string; linkedAt: string;
+  // sid của phiên gần nhất bên nhà cung cấp — logout_token thường chỉ gửi sid, cần nó để tra ngược ra người.
+  lastSid?: string;
+}
 
 export interface Reference { id: string; title: string; url: string; kind: "drive" | "sgk" | "link" | "video" }
 
@@ -131,9 +147,11 @@ export interface Settings {
   // Đăng nhập một lần (OIDC). Secret KHÔNG trả thô về client, chỉ lưu/gỡ qua op saveSso.
   // googleDomains = danh sách domain được vào, ngăn bằng dấu phẩy (luật vào cửa: đúng domain là đủ).
   googleClientId?: string; googleClientSecret?: string; googleDomains?: string;
-  // Nhà cung cấp định danh: mặc định Google. Ngày chuyển sang School Data Hub chỉ đổi đúng dòng này
-  // (+ client id/secret) — redirect_uri và bảng identityLinks giữ nguyên.
-  oidcDiscoveryUrl?: string;
+  // Nhà cung cấp định danh phụ (School Data Hub…). Trường googleClientId/Secret/Domains ở trên là nhà
+  // cung cấp "google" dựng sẵn — giữ nguyên để bản đang chạy không gãy. Nhiều nhà cung cấp chạy SONG SONG:
+  // Hub là đích cuối, Google là đường lùi khi hạ tầng Hub còn tạm.
+  oidcDiscoveryUrl?: string;              // ghi đè discovery của nhà cung cấp "google" (hiếm khi cần)
+  oidcProviders?: OidcProviderConfig[];
   // Bộ đếm ID tuần tự (Studio là bên sinh ID sau đồng nhất KC/Q/E/R). max đã cấp; sinh mới = ++counter.
   idSeq?: { q: number; e: number; r: number; l?: number };
   // Prompt sinh kịch bản video — sửa trong Cài đặt → Agents. Rỗng = dùng VIDEO_PROMPT mặc định (src/lib/video-prompt.ts).

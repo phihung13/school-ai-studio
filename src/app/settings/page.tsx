@@ -1,7 +1,7 @@
 "use client";
 import React, { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { FolderTree, Users, Bot, SlidersHorizontal, Save, UploadCloud, KeyRound, Zap, CheckCircle2, XCircle, Trash2, GraduationCap, LogIn } from "lucide-react";
+import { FolderTree, Users, Bot, SlidersHorizontal, Save, UploadCloud, KeyRound, Zap, CheckCircle2, XCircle, Trash2, GraduationCap, LogIn, Link as LinkIcon } from "lucide-react";
 import Shell from "@/components/shell";
 import { getData, api, Card, PageLoading, Button, Spinner, useToast, cls } from "@/components/ui";
 import { Settings, User } from "@/lib/shared";
@@ -31,7 +31,8 @@ function F({ label, hint, value, onChange, rows = 4, isAdmin }: { label: string;
 }
 
 interface TutorStatus { url: string; email: string; configured: boolean; hasPassword: boolean; hasJwt: boolean }
-interface SsoStatus { clientId: string; hasSecret: boolean; domains: string; enabled: boolean; source: "app" | "env" | null; callbackUrl: string; discoveryUrl: string; provider: string }
+interface SsoProvider { id: string; label: string; clientId: string; hasSecret: boolean; domains: string; discoveryUrl: string; source: "app" | "env"; sessionMinutes: number }
+interface SsoStatus { enabled: boolean; callbackUrl: string; backchannelLogoutUrl: string; providers: SsoProvider[] }
 interface SettingsData { settings: Settings; packPreview: string; hasKey: boolean; model: string; keySource: "app" | "env" | null; keyTail: string; tutor: TutorStatus; sso: SsoStatus }
 
 // Model cho dropdown — id model trên OpenRouter (có thể gõ id khác trong tương lai)
@@ -101,23 +102,24 @@ function TutorCard({ tutor, isAdmin, onSaved }: { tutor: TutorStatus; isAdmin: b
   );
 }
 
-// ===== Đăng nhập một lần (OIDC): bật/tắt + danh sách domain được vào =====
-// Hôm nay nhà cung cấp là Google; ngày trường có School Data Hub thì chỉ đổi Discovery URL + client id/secret,
-// địa chỉ quay về và bảng liên kết định danh giữ nguyên nên không ai phải đăng nhập lại từ đầu.
-function SsoCard({ sso, isAdmin, onSaved }: { sso: SsoStatus; isAdmin: boolean; onSaved: () => Promise<void> }) {
-  const [clientId, setClientId] = useState(sso.clientId);
+// ===== Đăng nhập một lần (OIDC) — nhiều nhà cung cấp chạy song song =====
+// Factory là miniapp: đích cuối là School Data Hub, Google là đường lùi khi hạ tầng Hub còn tạm.
+// Địa chỉ quay về và bảng liên kết định danh dùng CHUNG cho mọi nhà cung cấp, nên thêm/bớt nhà cung
+// cấp không ai phải đăng nhập lại từ đầu.
+function ProviderRow({ p, onSaved }: { p: SsoProvider; onSaved: () => Promise<void> }) {
+  const [clientId, setClientId] = useState(p.clientId);
   const [secret, setSecret] = useState("");
-  const [domains, setDomains] = useState(sso.domains);
+  const [domains, setDomains] = useState(p.domains);
   const [busy, setBusy] = useState<"save" | "clear" | null>(null);
   const [res, setRes] = useState<{ ok: boolean; message: string } | null>(null);
-  const [copied, setCopied] = useState(false);
+  const isGoogle = p.id === "google";
 
   const save = async () => {
     setBusy("save"); setRes(null);
     try {
-      await api("saveSso", { clientId, clientSecret: secret || undefined, domains });
+      await api("saveSso", { id: p.id, clientId, clientSecret: secret || undefined, domains, discoveryUrl: p.discoveryUrl, label: p.label });
       setSecret("");
-      setRes({ ok: true, message: "Đã lưu — trang đăng nhập hiện nút đăng nhập một lần ngay, không cần khởi động lại." });
+      setRes({ ok: true, message: "Đã lưu — có hiệu lực ngay, không cần khởi động lại." });
       await onSaved();
     } catch (e) { setRes({ ok: false, message: e instanceof Error ? e.message : "Lỗi" }); }
     setBusy(null);
@@ -125,56 +127,94 @@ function SsoCard({ sso, isAdmin, onSaved }: { sso: SsoStatus; isAdmin: boolean; 
   const clear = async () => {
     setBusy("clear"); setRes(null);
     try {
-      await api("saveSso", { clientId: "", clientSecret: "" });
+      await api("saveSso", { id: p.id, clientId: "", clientSecret: "" });
       setClientId(""); setSecret("");
-      setRes({ ok: true, message: "Đã tắt đăng nhập một lần." });
+      setRes({ ok: true, message: `Đã tắt lối đăng nhập ${p.label}.` });
       await onSaved();
     } catch (e) { setRes({ ok: false, message: e instanceof Error ? e.message : "Lỗi" }); }
     setBusy(null);
   };
 
   return (
+    <div className="mt-3 rounded-lg border border-line bg-surface p-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <p className="text-sm font-semibold text-ink">{p.label}</p>
+        <span className="text-xs text-muted">
+          {p.domains ? <>chỉ nhận email <b className="text-ink-2">@{p.domains}</b></> : <>nhà cung cấp tự bảo đảm người của trường</>}
+          {" · "}phiên {p.sessionMinutes >= 1440 ? `${Math.round(p.sessionMinutes / 1440)} ngày` : `${p.sessionMinutes} phút`}
+          {" · "}cấu hình {p.source === "app" ? "trong app" : "từ biến môi trường"}
+        </span>
+      </div>
+      <p className="mt-1 truncate font-mono text-[11px] text-muted">{p.discoveryUrl}</p>
+      <div className="mt-2.5 flex flex-wrap items-center gap-2">
+        <input value={clientId} onChange={(e) => { setClientId(e.target.value); setRes(null); }}
+          placeholder={isGoogle ? "Client ID …apps.googleusercontent.com" : "client_id"}
+          autoComplete="off" spellCheck={false}
+          className="w-full max-w-sm rounded-md border border-line-strong bg-surface px-3 py-2 font-mono text-sm text-ink outline-none transition focus:border-brand" />
+        <input type="password" value={secret} onChange={(e) => { setSecret(e.target.value); setRes(null); }}
+          placeholder={p.hasSecret ? "Client secret mới (đang có sẵn)" : "Client secret…"}
+          autoComplete="new-password" spellCheck={false}
+          className="w-full max-w-[15rem] rounded-md border border-line-strong bg-surface px-3 py-2 font-mono text-sm text-ink outline-none transition focus:border-brand" />
+        {isGoogle && (
+          <input value={domains} onChange={(e) => { setDomains(e.target.value); setRes(null); }} placeholder="truongvietanh.com"
+            autoComplete="off" spellCheck={false}
+            className="w-full max-w-[13rem] rounded-md border border-line-strong bg-surface px-3 py-2 text-sm text-ink outline-none transition focus:border-brand" />
+        )}
+        <Button onClick={save} disabled={!!busy || !clientId.trim() || (!secret && !p.hasSecret)}>{busy === "save" ? <Spinner /> : <><Save size={15} aria-hidden />Lưu</>}</Button>
+        {p.source === "app" && <Button variant="ghost" onClick={clear} disabled={!!busy}>{busy === "clear" ? <Spinner /> : <><Trash2 size={15} aria-hidden />Tắt</>}</Button>}
+      </div>
+      {res && (
+        <p className={cls("mt-2 flex items-start gap-1.5 text-sm", res.ok ? "text-ok" : "text-danger")}>
+          {res.ok ? <CheckCircle2 size={15} className="mt-0.5 shrink-0" aria-hidden /> : <XCircle size={15} className="mt-0.5 shrink-0" aria-hidden />}
+          {res.message}
+        </p>
+      )}
+      {!isGoogle && (
+        <p className="mt-2 text-[11px] text-muted">
+          Nhà cung cấp này không phát email, nên người <b>đã có tài khoản</b> phải tự nối: đăng nhập như thường rồi bấm liên kết bên dưới.
+          Ai chưa có tài khoản sẽ được mở tài khoản Giáo viên mới.
+        </p>
+      )}
+      <p className="mt-2 text-[11px]">
+        <a href={`/api/auth/oidc?p=${encodeURIComponent(p.id)}&link=1`}
+          className="inline-flex items-center gap-1.5 font-medium text-brand underline decoration-dotted underline-offset-2 hover:text-brand-ink">
+          <LinkIcon size={12} aria-hidden />Liên kết tài khoản của tôi với {p.label}
+        </a>
+        <span className="ml-2 text-muted">gắn định danh {p.label} vào chính tài khoản bạn đang dùng</span>
+      </p>
+    </div>
+  );
+}
+
+function SsoCard({ sso, isAdmin, onSaved }: { sso: SsoStatus; isAdmin: boolean; onSaved: () => Promise<void> }) {
+  const [copied, setCopied] = useState("");
+  const copy = (what: string, value: string) => {
+    navigator.clipboard?.writeText(value); setCopied(what); setTimeout(() => setCopied(""), 2000);
+  };
+  return (
     <Card className={cls("mt-4 p-4", sso.enabled ? "border-ok-line bg-ok-bg/40" : "border-warn-line bg-warn-bg/40")}>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-        <p className="flex items-center gap-1.5 text-sm font-semibold text-ink"><LogIn size={16} className={sso.enabled ? "text-ok" : "text-warn"} aria-hidden />Đăng nhập một lần ({sso.provider})</p>
+        <p className="flex items-center gap-1.5 text-sm font-semibold text-ink"><LogIn size={16} className={sso.enabled ? "text-ok" : "text-warn"} aria-hidden />Đăng nhập một lần</p>
         <span className="text-sm text-ink-2">
           {sso.enabled
-            ? <>Đang bật · ai có email <b>@{sso.domains.split(",")[0]?.trim()}</b> đều vào được{sso.domains.includes(",") ? <> (và các domain khác đã khai)</> : null} · cấu hình {sso.source === "app" ? "lưu trong app" : "từ biến môi trường"}</>
-            : <>Chưa bật — giáo viên phải nhớ mật khẩu riêng. Khai OAuth client của trường để mở lối đăng nhập bằng email trường.</>}
+            ? <>Đang bật {sso.providers.length} lối: {sso.providers.map((p) => p.label).join(" · ")}. Đăng nhập bằng mật khẩu vẫn chạy song song.</>
+            : <>Chưa bật — giáo viên phải nhớ mật khẩu riêng.</>}
         </span>
       </div>
       {isAdmin && (
         <>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <input value={clientId} onChange={(e) => { setClientId(e.target.value); setRes(null); }} placeholder="Client ID …apps.googleusercontent.com"
-              autoComplete="off" spellCheck={false}
-              className="w-full max-w-sm rounded-md border border-line-strong bg-surface px-3 py-2 font-mono text-sm text-ink outline-none transition focus:border-brand" />
-            <input type="password" value={secret} onChange={(e) => { setSecret(e.target.value); setRes(null); }}
-              placeholder={sso.hasSecret ? "Client secret mới (đang có sẵn)" : "Client secret…"}
-              autoComplete="new-password" spellCheck={false}
-              className="w-full max-w-[15rem] rounded-md border border-line-strong bg-surface px-3 py-2 font-mono text-sm text-ink outline-none transition focus:border-brand" />
-            <input value={domains} onChange={(e) => { setDomains(e.target.value); setRes(null); }} placeholder="truongvietanh.com"
-              autoComplete="off" spellCheck={false}
-              className="w-full max-w-[15rem] rounded-md border border-line-strong bg-surface px-3 py-2 text-sm text-ink outline-none transition focus:border-brand" />
-            <Button onClick={save} disabled={!!busy || !clientId.trim() || (!secret && !sso.hasSecret)}>{busy === "save" ? <Spinner /> : <><Save size={15} aria-hidden />Lưu</>}</Button>
-            {sso.source === "app" && <Button variant="ghost" onClick={clear} disabled={!!busy}>{busy === "clear" ? <Spinner /> : <><Trash2 size={15} aria-hidden />Tắt</>}</Button>}
+          {sso.providers.map((p) => <ProviderRow key={p.id} p={p} onSaved={onSaved} />)}
+          <div className="mt-3 space-y-1 text-[11px] text-muted">
+            <p>Hai địa chỉ phải nộp khi đăng ký app với nhà cung cấp (bấm để chép):</p>
+            {([["Địa chỉ quay về", sso.callbackUrl], ["Đăng xuất từ xa", sso.backchannelLogoutUrl]] as const).map(([ten, url]) => (
+              <p key={ten}>
+                {ten}:{" "}
+                <button type="button" onClick={() => copy(ten, url)}
+                  className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-ink-2 underline decoration-dotted underline-offset-2 transition hover:text-ink">{url}</button>
+                {copied === ten ? <b className="ml-1 text-ok">đã chép</b> : null}
+              </p>
+            ))}
           </div>
-          {res && (
-            <p className={cls("mt-2 flex items-start gap-1.5 text-sm", res.ok ? "text-ok" : "text-danger")}>
-              {res.ok ? <CheckCircle2 size={15} className="mt-0.5 shrink-0" aria-hidden /> : <XCircle size={15} className="mt-0.5 shrink-0" aria-hidden />}
-              {res.message}
-            </p>
-          )}
-          <p className="mt-2 text-[11px] text-muted">
-            Ô thứ ba là <b>domain được vào</b> (nhiều domain thì ngăn bằng dấu phẩy). Người có email đúng domain mà <b>đã có tài khoản</b> sẽ được nối vào chính tài khoản cũ (giữ nguyên vai và dữ liệu); chưa có thì mới mở tài khoản <b>Giáo viên</b>. Secret lưu trên máy chủ trường, client không nhận lại. Đăng nhập bằng mật khẩu vẫn chạy song song, không bị tắt.
-            <br />Nhà cung cấp hiện tại: <span className="font-mono text-ink-2">{sso.discoveryUrl}</span>
-            <br />Dán địa chỉ này vào ô &ldquo;Authorized redirect URI&rdquo; ở Google Cloud Console:{" "}
-            <button type="button" onClick={() => { navigator.clipboard?.writeText(sso.callbackUrl); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
-              className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-ink-2 underline decoration-dotted underline-offset-2 transition hover:text-ink">
-              {sso.callbackUrl}
-            </button>
-            {copied ? <b className="ml-1 text-ok">đã chép</b> : null}
-          </p>
         </>
       )}
     </Card>
