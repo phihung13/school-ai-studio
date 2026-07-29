@@ -36,6 +36,10 @@ export default function EmbedPage() {
   const [loi, setLoi] = useState("");
   const verifierRef = useRef<string>("");   // không đưa vào state: tránh lọt ra React DevTools/log
   const hubDaDapRef = useRef(false);
+  // Mã uỷ quyền chỉ dùng được MỘT lần. Đánh dấu ngay khi nhận, TRƯỚC mọi await — nếu chỉ dựa vào
+  // việc xoá verifier sau khi fetch xong thì hai message tới sát nhau đều lọt qua cửa và cùng đổi
+  // một mã, lần sau chắc chắn ăn invalid_grant.
+  const maDaXuLyRef = useRef<Set<string>>(new Set());
 
   const guiHub = useCallback((msg: Record<string, unknown>) => {
     if (window.parent === window) return;
@@ -65,6 +69,8 @@ export default function EmbedPage() {
       dungNhac();
       const data = event.data as { type?: string; code?: string };
       if (data?.type !== "embed:token" || !data.code || !verifierRef.current) return;
+      if (maDaXuLyRef.current.has(data.code)) return;   // đã cầm mã này rồi — bỏ qua, đừng đổi lần hai
+      maDaXuLyRef.current.add(data.code);
       try {
         const r = await fetch("/api/auth/embed", {
           method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
