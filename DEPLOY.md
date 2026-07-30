@@ -78,6 +78,9 @@ cp .env.example .env && nano .env
 
 > **Key AI KHÔNG đặt trong `.env`.** Sau khi app chạy, đăng nhập tài khoản quản trị → **Cài đặt → Kết nối OpenRouter (DeepSeek)** → dán key `sk-or-v1-…` → **Kiểm tra** → **Lưu**. Key lưu trong DB (`data/studio.db`) nên **sống qua mọi lần redeploy** (nằm ở volume `./data`).
 
+> **Đăng nhập một lần — ĐỪNG NHẦM TIỀN TỐ.** `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` / `OIDC_DISCOVERY_URL` / `OIDC_ALLOWED_DOMAINS` là của **Google**. School Data Hub dùng tiền tố riêng **`HUB_CLIENT_ID` / `HUB_CLIENT_SECRET` / `HUB_DISCOVERY_URL`** — hai nhà cung cấp chạy song song, đặt khoá Hub vào ô `OIDC_*` sẽ **đè Google** mà vẫn không bật được Hub. Không có biến `OIDC_ISSUER`: app đọc discovery, khai issuer trần hay `.well-known` đều được.
+> Bí mật chỉ đọc từ `.env`/Cài đặt, **không nhúng cứng vào mã**. Với Hub, app gửi bí mật bằng header `Authorization: Basic` — đây là điều kiện để được hưởng **cửa sổ chồng lấn** lúc Hub xoay khoá (xem `src/lib/oidc.ts`, hàm `clientAuth`).
+
 ---
 
 ## 4. ⚠ Nạp DB thật (BẮT BUỘC trước lần chạy đầu)

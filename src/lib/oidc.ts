@@ -83,11 +83,18 @@ function issuerUrl(discoveryUrl: string): URL {
 const cache = new Map<string, { at: number; config: client.Configuration }>();
 const CACHE_MS = 10 * 60 * 1000;
 
+// Cách gửi bí mật lên token endpoint KHÔNG phải chi tiết vặt: Hub chỉ cho **cửa sổ chồng lấn** lúc
+// xoay khoá (nhận cả khoá cũ lẫn mới trong một khoảng) khi app gửi bằng header `Authorization: Basic`.
+// Gửi trong thân request thì phải đổi đúng giờ hẹn, không có vùng đệm. Mặc định của openid-client v6
+// lại là client_secret_post → phải khai Basic RÕ RÀNG. Google giữ nguyên mặc định (bản đang chạy thật).
+const clientAuth = (p: Provider): client.ClientAuth | undefined =>
+  p.id === "google" ? undefined : client.ClientSecretBasic(p.clientSecret);
+
 export async function discover(p: Provider): Promise<client.Configuration> {
   const key = `${p.discoveryUrl}|${p.clientId}|${p.clientSecret.slice(-6)}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.config;
-  const config = await client.discovery(issuerUrl(p.discoveryUrl), p.clientId, p.clientSecret);
+  const config = await client.discovery(issuerUrl(p.discoveryUrl), p.clientId, p.clientSecret, clientAuth(p));
   cache.set(key, { at: Date.now(), config });
   return config;
 }
