@@ -13,7 +13,10 @@ export async function GET(req: NextRequest) {
   const db = getDB();
   const origin = originOf(req);
   const wanted = req.nextUrl.searchParams.get("p") || "";
-  const p = wanted ? providerById(db, wanted) : providers(db)[0];
+  // Không nêu tên thì lấy nhà cung cấp đầu tiên KHÔNG bị ẩn — nhà cung cấp ẩn chỉ vào bằng lối
+  // liên kết chủ động (?p=…&link=1), không phải lối mặc định của trang login.
+  const list = providers(db);
+  const p = wanted ? providerById(db, wanted) : (list.find((x) => !x.hiddenOnLogin) ?? list[0]);
   if (!p) return NextResponse.redirect(`${origin}/login?err=chua-cau-hinh`);
 
   // Liên kết chỉ có nghĩa khi đang đăng nhập sẵn — nếu không, cứ coi như đăng nhập thường.

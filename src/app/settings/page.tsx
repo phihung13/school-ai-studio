@@ -31,7 +31,7 @@ function F({ label, hint, value, onChange, rows = 4, isAdmin }: { label: string;
 }
 
 interface TutorStatus { url: string; email: string; configured: boolean; hasPassword: boolean; hasJwt: boolean }
-interface SsoProvider { id: string; label: string; clientId: string; hasSecret: boolean; domains: string; discoveryUrl: string; source: "app" | "env"; sessionMinutes: number }
+interface SsoProvider { id: string; label: string; clientId: string; hasSecret: boolean; domains: string; discoveryUrl: string; source: "app" | "env"; sessionMinutes: number; hiddenOnLogin: boolean }
 interface SsoStatus { enabled: boolean; callbackUrl: string; backchannelLogoutUrl: string; providers: SsoProvider[]; hubEvents: boolean }
 interface SettingsData { settings: Settings; packPreview: string; hasKey: boolean; model: string; keySource: "app" | "env" | null; keyTail: string; tutor: TutorStatus; sso: SsoStatus }
 
@@ -110,6 +110,7 @@ function ProviderRow({ p, onSaved }: { p: SsoProvider; onSaved: () => Promise<vo
   const [clientId, setClientId] = useState(p.clientId);
   const [secret, setSecret] = useState("");
   const [domains, setDomains] = useState(p.domains);
+  const [hidden, setHidden] = useState(p.hiddenOnLogin);
   const [busy, setBusy] = useState<"save" | "clear" | null>(null);
   const [res, setRes] = useState<{ ok: boolean; message: string } | null>(null);
   const isGoogle = p.id === "google";
@@ -117,7 +118,7 @@ function ProviderRow({ p, onSaved }: { p: SsoProvider; onSaved: () => Promise<vo
   const save = async () => {
     setBusy("save"); setRes(null);
     try {
-      await api("saveSso", { id: p.id, clientId, clientSecret: secret || undefined, domains, discoveryUrl: p.discoveryUrl, label: p.label });
+      await api("saveSso", { id: p.id, clientId, clientSecret: secret || undefined, domains, discoveryUrl: p.discoveryUrl, label: p.label, hiddenOnLogin: hidden });
       setSecret("");
       setRes({ ok: true, message: "Đã lưu — có hiệu lực ngay, không cần khởi động lại." });
       await onSaved();
@@ -160,6 +161,13 @@ function ProviderRow({ p, onSaved }: { p: SsoProvider; onSaved: () => Promise<vo
             autoComplete="off" spellCheck={false}
             className="w-full max-w-[13rem] rounded-md border border-line-strong bg-surface px-3 py-2 text-sm text-ink outline-none transition focus:border-brand" />
         )}
+        {!isGoogle && (
+          <label className="flex items-center gap-1.5 text-sm text-ink-2">
+            <input type="checkbox" checked={hidden} onChange={(e) => { setHidden(e.target.checked); setRes(null); }}
+              className="h-4 w-4 shrink-0 accent-brand" />
+            Ẩn khỏi trang đăng nhập
+          </label>
+        )}
         <Button onClick={save} disabled={!!busy || !clientId.trim() || (!secret && !p.hasSecret)}>{busy === "save" ? <Spinner /> : <><Save size={15} aria-hidden />Lưu</>}</Button>
         {p.source === "app" && <Button variant="ghost" onClick={clear} disabled={!!busy}>{busy === "clear" ? <Spinner /> : <><Trash2 size={15} aria-hidden />Tắt</>}</Button>}
       </div>
@@ -173,6 +181,7 @@ function ProviderRow({ p, onSaved }: { p: SsoProvider; onSaved: () => Promise<vo
         <p className="mt-2 text-[11px] text-muted">
           Nhà cung cấp này không phát email, nên người <b>đã có tài khoản</b> phải tự nối: đăng nhập như thường rồi bấm liên kết bên dưới.
           Ai chưa có tài khoản sẽ được mở tài khoản Giáo viên mới.
+          {p.hiddenOnLogin && <> Đang <b className="text-ink-2">ẩn khỏi trang đăng nhập</b> — chỉ vào được bằng lối liên kết bên dưới; đường nhúng và đăng xuất phía nhà cung cấp vẫn chạy.</>}
         </p>
       )}
       <p className="mt-2 text-[11px]">

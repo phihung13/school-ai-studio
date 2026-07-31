@@ -13,6 +13,11 @@ export interface User {
 export interface OidcProviderConfig {
   id: string; label: string; discoveryUrl: string; clientId: string; clientSecret: string;
   scope?: string; domains?: string; sessionMinutes?: number;
+  // Ẩn khỏi TRANG ĐĂNG NHẬP mà không tắt nhà cung cấp. Khác hẳn "Tắt": nhà cung cấp vẫn sống, nên
+  // nút "Liên kết tài khoản" trong Cài đặt, đường nhúng /embed và back-channel logout đều chạy nguyên.
+  // Dùng khi nhà cung cấp không phát email: bấm thẳng ở trang login sẽ ĐẺ TÀI KHOẢN TRẮNG cho người
+  // đã có tài khoản, nên chỉ cho vào bằng lối liên kết chủ động.
+  hiddenOnLogin?: boolean;
 }
 
 // Liên kết định danh ngoài (OIDC) → tài khoản trong app. Khoá theo CẢ HAI: (issuer, subject).

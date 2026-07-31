@@ -559,7 +559,7 @@ export async function POST(req: NextRequest) {
       // id "google" ghi vào các trường googleClientId/Secret/Domains có sẵn (giữ khuôn cũ, không gãy
       // bản đang chạy); mọi id khác ("hub"…) nằm trong mảng settings.oidcProviders.
       if (!isAdmin) return bad("Chỉ quản trị", 403);
-      const b = body as { id?: string; label?: string; discoveryUrl?: string; clientId?: string; clientSecret?: string; domains?: string; scope?: string; sessionMinutes?: number };
+      const b = body as { id?: string; label?: string; discoveryUrl?: string; clientId?: string; clientSecret?: string; domains?: string; scope?: string; sessionMinutes?: number; hiddenOnLogin?: boolean };
       const pid = (b.id || "google").trim();
       const clean = (v: string | undefined, max = 200) => v === undefined ? undefined : String(v).trim().slice(0, max);
 
@@ -593,6 +593,7 @@ export async function POST(req: NextRequest) {
             scope: clean(b.scope, 200) ?? cur?.scope ?? "openid profile",
             domains: domainList ? domainList.join(", ") : cur?.domains ?? "",
             sessionMinutes: Number(b.sessionMinutes ?? cur?.sessionMinutes ?? 15) || 15,
+            hiddenOnLogin: b.hiddenOnLogin ?? cur?.hiddenOnLogin ?? false,
           };
           if (i >= 0) list[i] = next; else list.push(next);
         }
@@ -602,7 +603,7 @@ export async function POST(req: NextRequest) {
       clearDiscoveryCache(); // đổi cấu hình là quên bản discovery đang nhớ, khỏi phải khởi động lại
       logActivity(user.name, oidcEnabled(db) ? "bật" : "tắt", `đăng nhập một lần (${pid})`, "/settings?tab=general"); // không log secret
       persist();
-      return NextResponse.json({ ok: true, enabled: oidcEnabled(db), providers: providers(db).map((x) => ({ id: x.id, label: x.label, clientId: x.clientId, hasSecret: !!x.clientSecret, domains: x.domains ?? "", discoveryUrl: x.discoveryUrl, source: x.source, sessionMinutes: x.sessionMinutes })) });
+      return NextResponse.json({ ok: true, enabled: oidcEnabled(db), providers: providers(db).map((x) => ({ id: x.id, label: x.label, clientId: x.clientId, hasSecret: !!x.clientSecret, domains: x.domains ?? "", discoveryUrl: x.discoveryUrl, source: x.source, sessionMinutes: x.sessionMinutes, hiddenOnLogin: !!x.hiddenOnLogin })) });
     }
     case "saveHubEmbed": {
       // Khai/gỡ cổng gửi sự kiện nghiệp vụ về Hub (Đường B). Gửi chuỗi rỗng = tắt hẳn.

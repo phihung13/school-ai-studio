@@ -52,7 +52,8 @@ export async function GET(req: NextRequest) {
   if (view === "me") {
     return NextResponse.json({
       user,
-      sso: providers(db).map((p) => ({ id: p.id, label: p.label })),
+      // Nhà cung cấp ẩn KHÔNG ra trang login (vẫn sống cho lối liên kết chủ động + đường nhúng).
+      sso: providers(db).filter((p) => !p.hiddenOnLogin).map((p) => ({ id: p.id, label: p.label })),
     });
   }
   if (!user) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
@@ -363,6 +364,7 @@ export async function GET(req: NextRequest) {
           providers: plist.map((p) => ({
             id: p.id, label: p.label, clientId: p.clientId, hasSecret: !!p.clientSecret,
             domains: p.domains ?? "", discoveryUrl: p.discoveryUrl, source: p.source, sessionMinutes: p.sessionMinutes ?? 0,
+            hiddenOnLogin: !!p.hiddenOnLogin,
           })),
           // Đường B: cổng gửi sự kiện nghiệp vụ về Hub — chỉ báo bật/tắt, không trả secret
           hubEvents: hubEventsOn(),
