@@ -1,7 +1,11 @@
-// Chỉ mục tài nguyên NotebookLM lưu trên đĩa (D:\TaiNguyen). Cấu trúc:
-//   <Môn>\<Lớp>\<Chương>\<Bài>\<KC-id>\DOK<n>\<Format>_<tên>.<ext>
-//   (mức Bài: ...\<Bài>\_ca-bai\<Format>_<tên>.<ext>)
-// Khoá nối = KC (atom.id sau đồng nhất ID) → nhúng thẳng vào trang nguyên tử.
+// Chỉ mục tài nguyên NotebookLM. Nguồn = TAINGUYEN_DIR (đĩa cũ D:\TaiNguyen HOẶC thư mục
+// Google Drive đã đồng bộ qua Drive for Desktop — cả hai đọc chung một bộ quét).
+// Khoá nối = KC (atom.id sau đồng nhất ID), xuất hiện dưới 2 quy ước tên thư mục:
+//   • Đĩa cũ : ...\<KC-xxxxxxx>\DOK<n>\<Format>_<tên>.<ext>            (thư mục = ĐÚNG mã KC)
+//   • Drive  : ...\<NN_Tên-bài-đọc-được_KC-xxxxxxx>\dok<n>\<Format>_<tên>_DOK<n>.<ext>
+//              (mã KC là HẬU TỐ của tên thư mục; DOK có thể nằm ở CUỐI tên tệp, không phải đầu)
+// → tìm đoạn KC-\d{7} BẤT KỲ ĐÂU trong tên thư mục; đọc DOK ưu tiên từ TÊN TỆP (khớp đúng
+// từng tệp hơn là suy từ thư mục cha, và không phụ thuộc DOK nằm ở đầu hay cuối tên).
 import fs from "fs";
 import path from "path";
 
@@ -69,20 +73,24 @@ function walk(dir: string, root: string, out: TnResource[]): void {
     if (e.name.startsWith(".")) continue;
     const rel = path.relative(root, full);
     const parts = rel.split(path.sep);
-    // tìm đoạn KC hoặc _ca-bai trong đường dẫn
-    const kcIdx = parts.findIndex((p) => /^KC-\d{7}$/.test(p) || p === "_ca-bai");
+    // tìm đoạn CHỨA mã KC-xxxxxxx (đĩa cũ: toàn bộ tên = KC; Drive: KC là hậu tố tên thư mục) hoặc _ca-bai
+    const kcIdx = parts.findIndex((p) => /KC-\d{7}/.test(p) || p === "_ca-bai");
     if (kcIdx === -1) continue;
-    const kc = parts[kcIdx];
-    const dokPart = parts.slice(kcIdx + 1).find((p) => /^DOK\d$/i.test(p));
-    const dok = dokPart ? Number(dokPart.slice(3)) : null;
+    const kcSeg = parts[kcIdx];
+    const kcM = kcSeg.match(/KC-\d{7}/);
+    const kc = kcM ? kcM[0] : kcSeg;                        // "_ca-bai" giữ nguyên nếu không có mã
+    const dokFolder = parts.slice(kcIdx + 1).find((p) => /^DOK\d$/i.test(p));
+    const dokFromFolder = dokFolder ? Number(dokFolder.slice(3)) : null;
     const file = e.name;
     const dot = file.lastIndexOf(".");
     const ext = dot >= 0 ? file.slice(dot + 1).toLowerCase() : "";
     const base = dot >= 0 ? file.slice(0, dot) : file;
     const usc = base.indexOf("_");
     const format = usc >= 0 ? base.slice(0, usc) : base;
-    let name = usc >= 0 ? base.slice(usc + 1) : "";
-    name = name.replace(/^DOK\d[_-]?/i, "").replace(/[-_]+/g, " ").trim();
+    const rest = usc >= 0 ? base.slice(usc + 1) : "";
+    const dokInName = rest.match(/DOK(\d)/i);
+    const dok = dokInName ? Number(dokInName[1]) : dokFromFolder;  // ưu tiên DOK đọc từ TÊN TỆP
+    const name = rest.replace(/[_-]?DOK\d[_-]?/i, "_").replace(/^_+|_+$/g, "").replace(/[-_]+/g, " ").trim();
     let st: fs.Stats; try { st = fs.statSync(full); } catch { continue; }
     const folder = parts.slice(0, kcIdx).join(" / ");   // Môn / Lớp / Chương / Bài (theo đĩa)
     out.push({ kc, dok, format, name, file, ext, viewer: refineViewer(format, ext), rel, folder, size: st.size, mtime: st.mtimeMs });
@@ -125,4 +133,6 @@ export const CONTENT_TYPE: Record<string, string> = {
   mp3: "audio/mpeg", m4a: "audio/mp4", wav: "audio/wav", ogg: "audio/ogg",
   png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml",
   md: "text/markdown; charset=utf-8", txt: "text/plain; charset=utf-8",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",  // Slide trên Drive là .pptx gốc (đĩa cũ dùng .pdf)
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 };
