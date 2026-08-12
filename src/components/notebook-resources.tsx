@@ -1,11 +1,15 @@
 "use client";
 import React, { useEffect, useMemo, useState } from "react";
-import { FileText, Image as ImageIcon, Network, Film, MessagesSquare, Mic, Presentation, ListChecks, Layers, Download, ExternalLink, type LucideIcon } from "lucide-react";
+import { FileText, Image as ImageIcon, Network, Film, MessagesSquare, Mic, Presentation, ListChecks, Layers, ExternalLink, Download, type LucideIcon } from "lucide-react";
 import { Card, cls } from "@/components/ui";
 
-// Định dạng NotebookLM (khớp lib/tainguyen.ts)
-type TnViewer = "iframe" | "pdf" | "video" | "audio" | "image" | "markdown" | "download";
-interface TnResource { kc: string; dok: number | null; format: string; name: string; ext: string; viewer: TnViewer; rel: string; size: number; mtime: number }
+// Định dạng NotebookLM. 5 định dạng NẶNG là con trỏ Drive (driveFileId, nhúng khung xem của Drive);
+// 4 định dạng NHẸ (Text/Mindmap/Quiz/Flashcards) lưu thẳng nội dung (content) trong Studio.
+interface TnAsset {
+  id: string; atomId: string; dok: number | null; format: string; name: string;
+  uploadedAt: string; uploadedBy: string;
+  driveFileId?: string; mimeType?: string; content?: string;
+}
 
 export const FMT_ORDER = ["Text", "Infographic", "Mindmap", "Video", "Audio-tranh-luan", "Podcast", "Slide", "Quiz", "Flashcards"] as const;
 export const FMT_ICON: Record<string, LucideIcon> = {
@@ -16,19 +20,21 @@ export const FMT_LABEL: Record<string, string> = {
   Text: "Bài đọc", Infographic: "Infographic", Mindmap: "Sơ đồ tư duy", Video: "Video",
   "Audio-tranh-luan": "Audio tranh luận", Podcast: "Podcast", Slide: "Slide", Quiz: "Quiz", Flashcards: "Flashcards",
 };
-export const fileUrl = (rel: string) => `/api/tainguyen?file=${encodeURIComponent(rel)}`;
+const INLINE = new Set(["Text", "Mindmap", "Quiz", "Flashcards"]);
+export const driveEmbedUrl = (id: string) => `https://drive.google.com/file/d/${id}/preview`;
+export const driveOpenUrl = (id: string) => `https://drive.google.com/file/d/${id}/view`;
+export const driveDownloadUrl = (id: string) => `https://drive.google.com/uc?export=download&id=${id}`;
 
 export default function NotebookResources({ kc }: { kc: string }) {
-  const [list, setList] = useState<TnResource[] | null>(null);
+  const [list, setList] = useState<TnAsset[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [dok, setDok] = useState<number | "all">("all");
-  const [active, setActive] = useState<TnResource | null>(null);
-  const [md, setMd] = useState<string>("");
+  const [active, setActive] = useState<TnAsset | null>(null);
 
   useEffect(() => {
     fetch(`/api/tainguyen?kc=${encodeURIComponent(kc)}`)
       .then((r) => r.json())
-      .then((d) => { if (d.error) throw new Error(d.error); setList(d.resources || []); })
+      .then((d) => { if (d.error) throw new Error(d.error); setList(d.resources || []); setActive(null); })
       .catch((e) => setErr(e.message));
   }, [kc]);
 
@@ -40,9 +46,8 @@ export default function NotebookResources({ kc }: { kc: string }) {
 
   const shown = useMemo(() => (list || []).filter((r) => dok === "all" || r.dok === dok), [list, dok]);
 
-  // gom theo định dạng (giữ thứ tự chuẩn), mỗi định dạng lấy tài nguyên đại diện + các bản DOK khác
   const byFormat = useMemo(() => {
-    const m: Record<string, TnResource[]> = {};
+    const m: Record<string, TnAsset[]> = {};
     shown.forEach((r) => { (m[r.format] ||= []).push(r); });
     const order = FMT_ORDER as readonly string[];
     const ordered = FMT_ORDER.filter((f) => m[f]).map((f) => ({ format: f as string, items: m[f] }));
@@ -50,17 +55,9 @@ export default function NotebookResources({ kc }: { kc: string }) {
     return [...ordered, ...extra];
   }, [shown]);
 
-  // trạng thái đã-xong: định dạng nào đã có (bất kỳ DOK)
   const doneSet = useMemo(() => new Set((list || []).map((r) => r.format)), [list]);
 
-  // tự chọn tài nguyên đầu tiên để "demo" hiện ngay
   useEffect(() => { if (!active && byFormat.length) setActive(byFormat[0].items[0]); }, [byFormat, active]);
-  useEffect(() => {
-    if (active?.viewer === "markdown") {
-      setMd("… đang tải …");
-      fetch(fileUrl(active.rel)).then((r) => r.text()).then(setMd).catch(() => setMd("Không đọc được tệp."));
-    }
-  }, [active]);
 
   if (err) return <p className="text-sm text-muted">Chưa nạp được tài nguyên: {err}</p>;
   if (!list) return <p className="text-sm text-muted">Đang tải tài nguyên…</p>;
@@ -81,7 +78,6 @@ export default function NotebookResources({ kc }: { kc: string }) {
 
   return (
     <div>
-      {/* Trạng thái đã-xong: 9 định dạng, tô đậm nếu có */}
       <div className="mb-3 flex flex-wrap items-center gap-1.5">
         <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Đã có:</span>
         {FMT_ORDER.map((f) => {
@@ -96,7 +92,6 @@ export default function NotebookResources({ kc }: { kc: string }) {
         })}
       </div>
 
-      {/* Chọn DOK */}
       {doks.length > 0 && (
         <div className="mb-3 flex flex-wrap items-center gap-1.5">
           <button onClick={() => setDok("all")} className={cls("rounded-full px-3 py-1 text-xs font-semibold transition", dok === "all" ? "bg-brand text-white" : "bg-surface-2 text-muted hover:text-ink-2")}>Mọi độ khó</button>
@@ -107,7 +102,6 @@ export default function NotebookResources({ kc }: { kc: string }) {
       )}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
-        {/* Cột trái: danh sách định dạng để chọn */}
         <div className="space-y-1.5">
           {byFormat.map(({ format, items }) => {
             const Icon = FMT_ICON[format] || FileText;
@@ -119,9 +113,9 @@ export default function NotebookResources({ kc }: { kc: string }) {
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {items.sort((a, b) => (a.dok ?? 0) - (b.dok ?? 0)).map((r) => (
-                    <button key={r.rel} onClick={() => setActive(r)}
+                    <button key={r.id} onClick={() => setActive(r)}
                       className={cls("rounded-md border px-2 py-1 text-[11px] font-medium transition",
-                        active?.rel === r.rel ? "border-brand bg-brand-bg text-brand-ink" : "border-line text-ink-2 hover:border-brand/60 hover:text-brand")}>
+                        active?.id === r.id ? "border-brand bg-brand-bg text-brand-ink" : "border-line text-ink-2 hover:border-brand/60 hover:text-brand")}>
                       {r.dok ? `DOK ${r.dok}` : (r.name || "Mở")}
                     </button>
                   ))}
@@ -131,7 +125,6 @@ export default function NotebookResources({ kc }: { kc: string }) {
           })}
         </div>
 
-        {/* Cột phải: khung demo — nhúng tài nguyên đang chọn */}
         <div className="min-w-0">
           {active ? (
             <Card className="overflow-hidden p-0">
@@ -139,10 +132,14 @@ export default function NotebookResources({ kc }: { kc: string }) {
                 <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
                   {FMT_LABEL[active.format] || active.format}{active.dok ? ` · DOK ${active.dok}` : ""}{active.name ? ` — ${active.name}` : ""}
                 </span>
-                <a href={fileUrl(active.rel)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-ink-2 transition hover:border-brand hover:text-brand" title="Mở tab mới"><ExternalLink size={12} /> Tab mới</a>
-                <a href={fileUrl(active.rel)} download className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-ink-2 transition hover:border-brand hover:text-brand" title="Tải về"><Download size={12} /></a>
+                {!INLINE.has(active.format) && active.driveFileId && (
+                  <>
+                    <a href={driveOpenUrl(active.driveFileId)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-ink-2 transition hover:border-brand hover:text-brand" title="Mở trên Drive"><ExternalLink size={12} /> Drive</a>
+                    <a href={driveDownloadUrl(active.driveFileId)} className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-ink-2 transition hover:border-brand hover:text-brand" title="Tải về"><Download size={12} /></a>
+                  </>
+                )}
               </div>
-              <Viewer r={active} md={md} />
+              <Viewer r={active} />
             </Card>
           ) : <p className="text-sm text-muted">Chọn một tài nguyên để xem.</p>}
         </div>
@@ -151,16 +148,15 @@ export default function NotebookResources({ kc }: { kc: string }) {
   );
 }
 
-function Viewer({ r, md }: { r: TnResource; md: string }) {
-  const src = fileUrl(r.rel);
+function Viewer({ r }: { r: TnAsset }) {
   const frame = "h-[70vh] max-h-[640px] w-full";
-  switch (r.viewer) {
-    case "video": return <video key={src} src={src} controls className="max-h-[640px] w-full bg-black" />;
-    case "audio": return <div className="p-5"><audio key={src} src={src} controls className="w-full" /></div>;
-    case "image": return <div className="max-h-[70vh] overflow-auto bg-surface-2/40 p-3 text-center"><img src={src} alt={r.name} className="mx-auto max-w-full rounded" /></div>;
-    case "pdf":
-    case "iframe": return <iframe key={src} src={src} className={frame} title={r.name} />;
-    case "markdown": return <div className="max-h-[70vh] overflow-auto px-5 py-4"><pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-ink-2">{md}</pre></div>;
-    default: return <div className="p-6 text-center text-sm text-muted">Định dạng .{r.ext} — <a href={src} download className="text-brand underline">tải về</a> để xem.</div>;
+  if (INLINE.has(r.format)) {
+    if (r.format === "Text") {
+      return <div className="max-h-[70vh] overflow-auto px-5 py-4"><pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-ink-2">{r.content || ""}</pre></div>;
+    }
+    // Mindmap/Quiz/Flashcards: HTML tự chứa, chạy tương tác thật (bấm chọn, lật thẻ…) qua srcDoc — cô lập bằng sandbox.
+    return <iframe srcDoc={r.content || ""} className={frame} sandbox="allow-scripts allow-same-origin allow-popups" title={r.name} />;
   }
+  if (!r.driveFileId) return <div className="p-6 text-center text-sm text-muted">Thiếu liên kết Drive cho tài nguyên này.</div>;
+  return <iframe key={r.driveFileId} src={driveEmbedUrl(r.driveFileId)} className={frame} allow="autoplay" title={r.name} />;
 }

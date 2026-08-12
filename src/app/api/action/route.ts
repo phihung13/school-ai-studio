@@ -531,10 +531,20 @@ export async function POST(req: NextRequest) {
       for (const k of ["tutorUrl", "tutorApikey", "tutorEmail", "tutorPassword", "tutorJwt"]) delete (settings as Record<string, unknown>)[k];
       // cấu hình Google cũng chỉ nhận qua op riêng (client không giữ bản thô của secret)
       for (const k of ["googleClientId", "googleClientSecret", "googleDomains"]) delete (settings as Record<string, unknown>)[k];
+      // khoá webhook tài nguyên NotebookLM chỉ sinh qua op "tainguyenGenKey"
+      delete (settings as Record<string, unknown>).tainguyenApiKey;
       db.settings = { ...db.settings, ...settings, monthlyBudgetUsd: Number(settings.monthlyBudgetUsd ?? db.settings.monthlyBudgetUsd) || db.settings.monthlyBudgetUsd };
       logActivity(user.name, "cập nhật", "phong cách chung", "/settings");
       persist();
       return NextResponse.json({ ok: true });
+    }
+    // Sinh (hoặc thu hồi + sinh lại) khoá webhook nhận tài nguyên NotebookLM — dùng ở POST /api/tainguyen.
+    case "tainguyenGenKey": {
+      if (!isAdmin) return bad("Chỉ quản trị", 403);
+      db.settings.tainguyenApiKey = uid("tnk_") + uid("");
+      logActivity(user.name, "sinh lại", "khoá webhook tài nguyên NotebookLM", "/settings");
+      persist();
+      return NextResponse.json({ ok: true, key: db.settings.tainguyenApiKey });
     }
     case "saveAiKey": {
       // Lưu/Xóa kết nối OpenRouter từ UI Cài đặt — có hiệu lực NGAY (không cần restart server)

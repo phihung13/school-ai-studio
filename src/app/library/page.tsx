@@ -5,20 +5,21 @@ import { Search, PackageSearch, ExternalLink, Download, X, ArrowRight, Layers3, 
 import Shell from "@/components/shell";
 import { getData, Card, PageLoading, Empty, cls, M } from "@/components/ui";
 import { User } from "@/lib/shared";
-import { FMT_ORDER, FMT_ICON, FMT_LABEL, fileUrl } from "@/components/notebook-resources";
+import { FMT_ORDER, FMT_ICON, FMT_LABEL, driveOpenUrl, driveDownloadUrl } from "@/components/notebook-resources";
 
-interface TnRes { kc: string; dok: number | null; format: string; name: string; file: string; ext: string; viewer: string; rel: string; folder: string; size: number; mtime: number }
+const INLINE_FMT = new Set(["Text", "Mindmap", "Quiz", "Flashcards"]);
+const resourceUrl = (id: string) => `/api/tainguyen?id=${encodeURIComponent(id)}`;
+interface TnRes { id: string; atomId: string; dok: number | null; format: string; name: string; uploadedAt: string; uploadedBy: string; driveFileId?: string; mimeType?: string; content?: string }
 interface TnFolder { id: string; kind: string; title: string; code?: string; resources: number; atomsWith: number; atomsTotal: number; formats: string[] }
 interface Crumb { id: string; title: string; kind: string }
 interface SearchHit { atomId: string; code?: string; title: string; chain: string; resources: TnRes[] }
 interface TnData {
   level: string; breadcrumb: Crumb[]; folders: TnFolder[]; resources?: TnRes[]; results?: SearchHit[];
   atom?: { id: string; code?: string; title: string; chain: string };
-  stats: { resources: number; atomsWith: number; atomsTotal: number }; unmatched: number;
+  stats: { resources: number; atomsWith: number; atomsTotal: number };
 }
 
-const KB = (n: number) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
-const KIND_LABEL: Record<string, string> = { subject: "Môn", grade: "Lớp", chapter: "Chương", lesson: "Bài", point: "Điểm kiến thức", atom: "Nguyên tử", disk: "Thư mục đĩa" };
+const KIND_LABEL: Record<string, string> = { subject: "Môn", grade: "Lớp", chapter: "Chương", lesson: "Bài", point: "Điểm kiến thức", atom: "Nguyên tử" };
 
 export default function LibraryPage() {
   const [data, setData] = useState<TnData | null>(null);
@@ -115,9 +116,9 @@ export default function LibraryPage() {
                       </Card>
                     ))}
                   </div>
-            ) : data.level === "atom" || data.level === "unmatched" ? (
-              /* ═══ CẤP LÁ — thuần Drive: chỉ tệp đang có, xếp dưới đúng mức DOK ═══ */
-              <DriveList atom={data.atom} resources={data.resources || []} />
+            ) : data.level === "atom" ? (
+              /* ═══ CẤP LÁ — tài nguyên đang có, xếp dưới đúng mức DOK ═══ */
+              <AssetList atom={data.atom} resources={data.resources || []} />
             ) : (data.folders || []).length === 0 ? (
               <Empty icon={<PackageSearch size={28} strokeWidth={1.75} />} title={onlyFilled ? "Mục này chưa có tài nguyên" : "Mục này chưa có nội dung"}
                 hint={onlyFilled ? "Bấm “Hiện cả mục chưa có tài nguyên” để xem toàn bộ danh mục." : "Sinh học liệu bằng NotebookLM — tệp lưu theo mã KC sẽ tự hiện ở đây."} />
@@ -173,10 +174,10 @@ export default function LibraryPage() {
   );
 }
 
-/* Cấp lá (nguyên tử): THUẦN DRIVE — chỉ liệt kê tệp thật sự có trên đĩa, xếp dưới đúng
-   mức DOK của nó. Không kẻ sẵn 9 định dạng, không ghi "chưa có": mở ra thấy đúng như
-   mở thư mục. Node chỉ có DOK1 thì chỉ thấy một mục DOK 1. */
-function DriveList({ atom, resources }: { atom?: { id: string; code?: string; title: string; chain: string }; resources: TnRes[] }) {
+/* Cấp lá (nguyên tử): liệt kê tài nguyên đang có, xếp dưới đúng mức DOK. 5 định dạng nặng
+   mở/tải thẳng qua Drive; 4 định dạng nhẹ (Text/Mindmap/Quiz/Flashcards) phục vụ bởi chính
+   Studio (nội dung lưu trong DB) — cùng một URL /api/tainguyen?id= cho cả hai loại. */
+function AssetList({ atom, resources }: { atom?: { id: string; code?: string; title: string; chain: string }; resources: TnRes[] }) {
   const doks = [...new Set(resources.map((r) => r.dok))].sort((a, b) => (a ?? 99) - (b ?? 99));
 
   return (
@@ -207,15 +208,18 @@ function DriveList({ atom, resources }: { atom?: { id: string; code?: string; ti
             <Card className="divide-y divide-line p-0">
               {files.map((r) => {
                 const Icon = FMT_ICON[r.format] || PackageSearch;
+                const inline = INLINE_FMT.has(r.format);
+                const openHref = inline ? resourceUrl(r.id) : r.driveFileId ? driveOpenUrl(r.driveFileId) : resourceUrl(r.id);
+                const dlHref = inline ? resourceUrl(r.id) : r.driveFileId ? driveDownloadUrl(r.driveFileId) : resourceUrl(r.id);
                 return (
-                  <div key={r.rel} className="flex items-center gap-3 px-4 py-2.5 transition hover:bg-surface-2/60">
+                  <div key={r.id} className="flex items-center gap-3 px-4 py-2.5 transition hover:bg-surface-2/60">
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-brass-ink"><Icon size={16} strokeWidth={1.75} /></span>
-                    <a href={fileUrl(r.rel)} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] font-medium text-ink transition hover:text-brand">{r.file || `${r.format}.${r.ext}`}</span>
-                      <span className="block text-[11px] text-muted">{FMT_LABEL[r.format] || r.format} · {KB(r.size)} · {new Date(r.mtime).toLocaleDateString("vi-VN")}</span>
+                    <a href={openHref} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] font-medium text-ink transition hover:text-brand">{r.name || FMT_LABEL[r.format] || r.format}</span>
+                      <span className="block text-[11px] text-muted">{FMT_LABEL[r.format] || r.format} · {inline ? "trong Studio" : "trên Drive"} · {new Date(r.uploadedAt).toLocaleDateString("vi-VN")}</span>
                     </a>
-                    <a href={fileUrl(r.rel)} target="_blank" rel="noopener noreferrer" title="Mở tab mới" className="shrink-0 rounded-md p-1.5 text-muted transition hover:bg-brand-bg/50 hover:text-brand"><ExternalLink size={14} /></a>
-                    <a href={fileUrl(r.rel)} download title="Tải về" className="shrink-0 rounded-md p-1.5 text-muted transition hover:bg-brand-bg/50 hover:text-brand"><Download size={14} /></a>
+                    <a href={openHref} target="_blank" rel="noopener noreferrer" title="Mở tab mới" className="shrink-0 rounded-md p-1.5 text-muted transition hover:bg-brand-bg/50 hover:text-brand"><ExternalLink size={14} /></a>
+                    {!inline && <a href={dlHref} title="Tải về" className="shrink-0 rounded-md p-1.5 text-muted transition hover:bg-brand-bg/50 hover:text-brand"><Download size={14} /></a>}
                   </div>
                 );
               })}

@@ -10,7 +10,8 @@ import { backchannelLogoutUrl, callbackUrl, oidcEnabled, originOf, providers } f
 import { hubEventsOn } from "@/lib/hub-events";
 import { flashcardsForAtom } from "@/lib/flashcards";
 import { dueOf } from "@/lib/srs";
-import { scanAll, TN_FORMATS, type TnResource } from "@/lib/tainguyen";
+import { TN_FORMATS } from "@/lib/tainguyen";
+import type { TnAsset } from "@/lib/shared";
 
 export const dynamic = "force-dynamic";
 
@@ -331,16 +332,15 @@ export async function GET(req: NextRequest) {
       // ?filled=1 → chỉ hiện mục đã có.
       const onlyFilled = req.nextUrl.searchParams.get("filled") === "1";
 
-      // ── Join tài nguyên ↔ cây, rồi cộng dồn số liệu lên mọi tổ tiên ──
-      const byAtom = new Map<string, TnResource[]>();
+      // ── Join tài nguyên (đẩy lên qua webhook, đã validate atomId lúc ghi) ↔ cây, cộng dồn lên tổ tiên ──
+      const byAtom = new Map<string, TnAsset[]>();
       const resCount = new Map<string, number>();          // id nút → số tài nguyên bên dưới
       const atomsHit = new Map<string, Set<string>>();     // id nút → tập nguyên tử đã có tài nguyên
       const chainOf = new Map<string, string>();           // id nguyên tử → chuỗi Môn › … › Bài
-      const orphans: TnResource[] = [];
-      for (const r of scanAll()) {
-        const atom = /^KC-\d{7}$/.test(r.kc) ? node(db, r.kc) : undefined;
-        if (!atom || atom.kind !== "atom") { orphans.push(r); continue; }
-        const list = byAtom.get(atom.id) || []; list.push(r); byAtom.set(atom.id, list);
+      for (const t of db.tainguyen) {
+        const atom = node(db, t.atomId);
+        if (!atom || atom.kind !== "atom") continue;        // atom đã bị xoá sau khi tài nguyên được đẩy lên
+        const list = byAtom.get(atom.id) || []; list.push(t); byAtom.set(atom.id, list);
         const anc = ancestors(db, atom.id);
         if (!chainOf.has(atom.id)) chainOf.set(atom.id, anc.map((n) => n.title).join(" › "));
         for (const a of [...anc.map((n) => n.id), atom.id]) {
@@ -348,7 +348,7 @@ export async function GET(req: NextRequest) {
           const s = atomsHit.get(a) || new Set<string>(); s.add(atom.id); atomsHit.set(a, s);
         }
       }
-      const sortRes = (l: TnResource[]) => l.sort((a, b) => TN_FORMATS.indexOf(a.format as never) - TN_FORMATS.indexOf(b.format as never) || (a.dok ?? 0) - (b.dok ?? 0));
+      const sortRes = (l: TnAsset[]) => l.sort((a, b) => TN_FORMATS.indexOf(a.format as never) - TN_FORMATS.indexOf(b.format as never) || (a.dok ?? 0) - (b.dok ?? 0));
 
       // ── Ô tìm kiếm: trả kết quả phẳng theo nguyên tử ──
       if (q) {
@@ -356,34 +356,24 @@ export async function GET(req: NextRequest) {
           .map(([atomId, list]) => { const a = node(db, atomId)!; return { atomId, code: a.code, title: a.title, chain: chainOf.get(atomId) || "", resources: sortRes(list) }; })
           .filter((g) => g.title.toLowerCase().includes(q) || (g.code || "").toLowerCase().includes(q) || g.chain.toLowerCase().includes(q) || g.resources.some((r) => String(r.format).toLowerCase().includes(q)))
           .slice(0, 60);
-        return NextResponse.json({ level: "search", q, breadcrumb: [], folders: [], results: hits, stats: { resources: hits.reduce((s, g) => s + g.resources.length, 0), atomsWith: hits.length, atomsTotal: 0 }, unmatched: orphans.length });
+        return NextResponse.json({ level: "search", q, breadcrumb: [], folders: [], results: hits, stats: { resources: hits.reduce((s, g) => s + g.resources.length, 0), atomsWith: hits.length, atomsTotal: 0 } });
       }
 
-      // ── Cấp LÁ (nguyên tử): trả THẲNG danh sách tệp, mỗi tệp giữ đúng DOK của nó.
-      //    DOK KHÔNG phải một cấp thư mục phải bấm vào — chỉ là nhãn phân nhóm khi hiển thị.
-      const cur = nodeId && nodeId !== "__unmatched" ? node(db, nodeId) : undefined;
+      // ── Cấp LÁ (nguyên tử): trả THẲNG danh sách tài nguyên, mỗi cái giữ đúng DOK của nó.
+      //    DOK KHÔNG phải một cấp phải bấm vào — chỉ là nhãn phân nhóm khi hiển thị.
+      const cur = nodeId ? node(db, nodeId) : undefined;
       if (cur && cur.kind === "atom") {
-        const mine = byAtom.get(cur.id) || [];
-        // sắp theo DOK trước (1→2→3, không rõ DOK xuống cuối), rồi theo thứ tự định dạng chuẩn
-        const files = [...mine].sort((a, b) => (a.dok ?? 99) - (b.dok ?? 99) || TN_FORMATS.indexOf(a.format as never) - TN_FORMATS.indexOf(b.format as never));
+        const files = sortRes([...(byAtom.get(cur.id) || [])]).sort((a, b) => (a.dok ?? 99) - (b.dok ?? 99));
         return NextResponse.json({
           level: "atom",
           breadcrumb: ancestors(db, cur.id).map((n) => ({ id: n.id, title: n.title, kind: n.kind })).concat([{ id: cur.id, title: cur.title, kind: cur.kind }]),
           atom: { id: cur.id, code: cur.code, title: cur.title, chain: chainOf.get(cur.id) || ancestors(db, cur.id).map((n) => n.title).join(" › ") },
           folders: [], resources: files,
-          stats: { resources: files.length, atomsWith: 0, atomsTotal: 0 }, unmatched: orphans.length,
+          stats: { resources: files.length, atomsWith: 0, atomsTotal: 0 },
         });
       }
 
-      // ── Kho tệp chưa khớp cây (nếu có) ──
-      if (nodeId === "__unmatched") {
-        return NextResponse.json({
-          level: "unmatched", breadcrumb: [{ id: "__unmatched", title: "Chưa khớp cây kiến thức", kind: "disk" }],
-          folders: [], resources: sortRes(orphans), stats: { resources: orphans.length, atomsWith: 0, atomsTotal: 0 }, unmatched: orphans.length,
-        });
-      }
-
-      // ── Cấp THƯ MỤC: liệt kê mục con (chỉ mục CÓ tài nguyên, trừ khi ?all=1) ──
+      // ── Cấp THƯ MỤC: liệt kê mục con (chỉ mục CÓ tài nguyên, trừ khi ?filled=0) ──
       const kids = nodeId ? children(db, nodeId) : db.tree.filter((n) => n.kind === "subject").sort((a, b) => a.order - b.order);
       interface TnFolder { id: string; kind: string; title: string; code?: string; resources: number; atomsWith: number; atomsTotal: number; formats: string[] }
       const folders: TnFolder[] = kids                       // children() đã sắp theo `order` → giữ nguyên thứ tự cây
@@ -403,13 +393,10 @@ export async function GET(req: NextRequest) {
       const breadcrumb = nodeId && cur
         ? ancestors(db, cur.id).map((n) => ({ id: n.id, title: n.title, kind: n.kind })).concat([{ id: cur.id, title: cur.title, kind: cur.kind }])
         : [];
-      // thư mục ảo cho tệp chưa khớp cây — để không có gì bị vô hình
-      if (!nodeId && orphans.length) folders.push({ id: "__unmatched", kind: "disk", title: "Chưa khớp cây kiến thức", code: "", resources: orphans.length, atomsWith: 0, atomsTotal: 0, formats: [] });
 
       return NextResponse.json({
         level: nodeId ? (cur?.kind || "node") : "root", breadcrumb, folders, resources: [],
         stats: { resources: nodeId ? resCount.get(nodeId) || 0 : [...byAtom.values()].reduce((s, l) => s + l.length, 0), atomsWith: nodeId ? (atomsHit.get(nodeId) || new Set()).size : byAtom.size, atomsTotal: scopeAtoms.length },
-        unmatched: orphans.length,
       });
     }
     case "proposals":
@@ -440,8 +427,8 @@ export async function GET(req: NextRequest) {
     case "settings": {
       const sampleAtom = db.tree.find((n) => n.kind === "atom")!;
       // KHÔNG BAO GIỜ trả key/mật khẩu thô về client — chỉ trạng thái + vài ký tự nhận diện
-      const { anthropicApiKey: _k, tutorPassword: _tp, tutorJwt: _tj, googleClientSecret: _gs, hubEmbedSecret: _hs, oidcProviders: _op, ...safeSettings } = db.settings;
-      void _k; void _tp; void _tj; void _gs; void _hs; void _op;
+      const { anthropicApiKey: _k, tutorPassword: _tp, tutorJwt: _tj, googleClientSecret: _gs, hubEmbedSecret: _hs, oidcProviders: _op, tainguyenApiKey: _tnk, ...safeSettings } = db.settings;
+      void _k; void _tp; void _tj; void _gs; void _hs; void _op; void _tnk;
       const plist = providers(db);
       const k = aiKey(db);
       const tcfg = tutorConfig(db);
@@ -451,6 +438,8 @@ export async function GET(req: NextRequest) {
         settings: safeSettings, packPreview: instructionPack(db, sampleAtom, 2),
         hasKey: hasAiKey(db), model: aiModel(db), keySource: aiKeySource(db), keyTail: k && isAdmin ? k.slice(-4) : "",
         tutor: { url: tcfg.url, email: tcfg.email || "", configured: tutorConfigured(db), hasPassword: !!db.settings.tutorPassword, hasJwt: !!db.settings.tutorJwt },
+        // Webhook nhận tài nguyên NotebookLM: chỉ báo đã sinh khoá hay chưa + đuôi (đủ khoá chỉ trả 1 lần lúc sinh, xem case tainguyenGenKey).
+        tainguyen: { hasKey: !!db.settings.tainguyenApiKey, keyTail: db.settings.tainguyenApiKey && isAdmin ? db.settings.tainguyenApiKey.slice(-4) : "" },
         // Đăng nhập một lần: client secret KHÔNG trả thô, chỉ báo đã có hay chưa.
         // callbackUrl + backchannelLogoutUrl là hai địa chỉ phải nộp cho nhà cung cấp khi đăng ký app.
         sso: {

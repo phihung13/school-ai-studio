@@ -1,7 +1,7 @@
 "use client";
 import React, { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { FolderTree, Users, Bot, SlidersHorizontal, Save, UploadCloud, KeyRound, Zap, CheckCircle2, XCircle, Trash2, GraduationCap, LogIn, Link as LinkIcon } from "lucide-react";
+import { FolderTree, Users, Bot, SlidersHorizontal, Save, UploadCloud, KeyRound, Zap, CheckCircle2, XCircle, Trash2, GraduationCap, LogIn, Link as LinkIcon, Webhook, Copy, RefreshCw } from "lucide-react";
 import Shell from "@/components/shell";
 import { getData, api, Card, PageLoading, Button, Spinner, useToast, cls } from "@/components/ui";
 import { Settings, User } from "@/lib/shared";
@@ -33,7 +33,8 @@ function F({ label, hint, value, onChange, rows = 4, isAdmin }: { label: string;
 interface TutorStatus { url: string; email: string; configured: boolean; hasPassword: boolean; hasJwt: boolean }
 interface SsoProvider { id: string; label: string; clientId: string; hasSecret: boolean; domains: string; discoveryUrl: string; source: "app" | "env"; sessionMinutes: number; hiddenOnLogin: boolean }
 interface SsoStatus { enabled: boolean; callbackUrl: string; backchannelLogoutUrl: string; providers: SsoProvider[]; hubEvents: boolean }
-interface SettingsData { settings: Settings; packPreview: string; hasKey: boolean; model: string; keySource: "app" | "env" | null; keyTail: string; tutor: TutorStatus; sso: SsoStatus }
+interface TnStatus { hasKey: boolean; keyTail: string }
+interface SettingsData { settings: Settings; packPreview: string; hasKey: boolean; model: string; keySource: "app" | "env" | null; keyTail: string; tutor: TutorStatus; sso: SsoStatus; tainguyen: TnStatus }
 
 // Model cho dropdown — id model trên OpenRouter (có thể gõ id khác trong tương lai)
 const AI_MODELS = [
@@ -96,6 +97,58 @@ function TutorCard({ tutor, isAdmin, onSaved }: { tutor: TutorStatus; isAdmin: b
             </p>
           )}
           <p className="mt-2 text-[11px] text-muted">Studio tự đăng nhập Supabase tutor lấy token khi đẩy — mật khẩu lưu trên máy chủ trường, client không nhận lại. Chỉ đẩy được học liệu thuộc gói <b>Chuẩn trường</b>, môn Toán · Hóa · Tiếng Anh · Văn. Host: {tutor.url}</p>
+        </>
+      )}
+    </Card>
+  );
+}
+
+// ===== Webhook nhận tài nguyên NotebookLM — Claude đẩy lên sau mỗi lần sinh (POST /api/tainguyen) =====
+function TaiNguyenCard({ tn, isAdmin, onSaved }: { tn: TnStatus; isAdmin: boolean; onSaved: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const [newKey, setNewKey] = useState("");   // chỉ hiện MỘT LẦN ngay sau khi sinh — server không trả lại lần sau
+  const [toast, show] = useToast();
+
+  const gen = async () => {
+    if (tn.hasKey && !window.confirm("Sinh khoá mới sẽ làm khoá cũ (đang dùng ở NotebookLM/Claude) mất tác dụng ngay. Tiếp tục?")) return;
+    setBusy(true);
+    try {
+      const res = await api<{ ok: boolean; key: string }>("tainguyenGenKey", {});
+      setNewKey(res.key);
+      await onSaved();
+    } catch (e) { show(e instanceof Error ? e.message : "Lỗi", "err"); }
+    setBusy(false);
+  };
+  const copy = () => { navigator.clipboard.writeText(newKey); show("Đã sao chép khoá"); };
+
+  return (
+    <Card className={cls("mt-4 p-4", tn.hasKey ? "border-ok-line bg-ok-bg/40" : "border-warn-line bg-warn-bg/40")}>
+      {toast}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+        <p className="flex items-center gap-1.5 text-sm font-semibold text-ink"><Webhook size={16} className={tn.hasKey ? "text-ok" : "text-warn"} aria-hidden />Webhook tài nguyên NotebookLM</p>
+        <span className="text-sm text-ink-2">
+          {tn.hasKey
+            ? <>Đã bật — Claude đẩy tài nguyên qua <code className="rounded bg-surface-2 px-1 py-0.5 text-[12px]">POST /api/tainguyen</code> (khoá …{tn.keyTail})</>
+            : <>Chưa bật — sinh khoá để Claude (skill NotebookLM) đẩy tài nguyên vào kho.</>}
+        </span>
+      </div>
+      {isAdmin && (
+        <>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button variant={tn.hasKey ? "secondary" : "primary"} onClick={gen} disabled={busy}>
+              {busy ? <Spinner label="Đang sinh…" /> : tn.hasKey ? <><RefreshCw size={15} aria-hidden />Sinh khoá mới</> : <><Webhook size={15} aria-hidden />Bật webhook</>}
+            </Button>
+          </div>
+          {newKey && (
+            <div className="mt-3 rounded-lg border border-brand-line bg-brand-bg/40 p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-brand">Khoá mới — chỉ hiện MỘT LẦN, chép ngay</p>
+              <div className="mt-1.5 flex items-center gap-2">
+                <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded-md border border-line bg-surface px-2.5 py-1.5 text-[13px] text-ink">{newKey}</code>
+                <Button variant="secondary" onClick={copy}><Copy size={14} aria-hidden />Chép</Button>
+              </div>
+            </div>
+          )}
+          <p className="mt-2 text-[11px] text-muted">Dán khoá vào cấu hình skill NotebookLM (header <code className="rounded bg-surface-2 px-1 py-0.5">X-Api-Key</code>). Body JSON: atomId (mã KC), format, dok, name — cộng driveFileId+mimeType (định dạng nặng: Video/Audio-tranh-luan/Podcast/Slide/Infographic) hoặc content (định dạng nhẹ: Text/Mindmap/Quiz/Flashcards).</p>
         </>
       )}
     </Card>
@@ -332,6 +385,7 @@ function GeneralPanel({ me }: { me: User | null }) {
         )}
       </Card>
       <TutorCard tutor={data.tutor} isAdmin={isAdmin} onSaved={refreshStatus} />
+      <TaiNguyenCard tn={data.tainguyen} isAdmin={isAdmin} onSaved={refreshStatus} />
       <SsoCard sso={data.sso} isAdmin={isAdmin} onSaved={refreshStatus} />
       <div className="mt-5 grid gap-4 lg:grid-cols-2">
         <div className="space-y-4">

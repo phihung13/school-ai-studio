@@ -142,6 +142,28 @@ export interface Proposal {
 
 export interface Activity { id?: string; at: string; by: string; action: string; target: string; href?: string; }
 export interface FormatSkill { agent: string; style: string; imageStyle: string; guide: string; audience?: string; length?: string; constraints?: string; sample?: string }
+// Tài nguyên NotebookLM — do Claude (skill sinh-tai-nguyen-notebooklm) ĐẨY LÊN qua webhook
+// sau mỗi lần sinh (POST /api/tainguyen). File LỚN (Video/Audio/Podcast/Slide/Infographic)
+// KHÔNG lưu ở Studio — chỉ giữ con trỏ (driveFileId), nhúng thẳng khung xem của Drive.
+// Định dạng HTML/markdown NHỎ (Mindmap/Quiz/Flashcards/Text) lưu nguyên nội dung (vài KB,
+// không đáng kể) để chạy tương tác thật trong Studio — Drive không thực thi JS khi nhúng.
+export type TnFormat = "Text" | "Infographic" | "Mindmap" | "Video" | "Audio-tranh-luan" | "Podcast" | "Slide" | "Quiz" | "Flashcards";
+export const TN_INLINE_FORMATS: readonly string[] = ["Text", "Mindmap", "Quiz", "Flashcards"];
+export interface TnAsset {
+  id: string;               // tn_xxxxxxxxxxxx
+  atomId: string;           // KC-xxxxxxx — nối thẳng vào cây Studio
+  dok: number | null;       // 1..3 hoặc null (bản không theo DOK)
+  format: TnFormat | string;
+  name: string;             // tên hiển thị (mặc định suy từ atom, giáo viên sửa được)
+  uploadedAt: string;       // iso
+  uploadedBy: string;       // "Claude" hoặc tên người đẩy lên
+  // Định dạng NẶNG (Drive-pointer): mã tệp Drive + loại nội dung, dùng dựng URL nhúng/tải.
+  driveFileId?: string;
+  mimeType?: string;
+  // Định dạng NHẸ (inline): nội dung thật (HTML tự chứa hoặc markdown), Studio render trực tiếp.
+  content?: string;
+}
+
 // Bình luận của giáo viên dưới mỗi nguyên tử (kiểu mxh: phẳng, mới nhất dưới cùng).
 export interface Comment {
   id: string;
@@ -171,6 +193,9 @@ export interface Settings {
   oidcProviders?: OidcProviderConfig[];
   // Bộ đếm ID tuần tự (Studio là bên sinh ID sau đồng nhất KC/Q/E/R). max đã cấp; sinh mới = ++counter.
   idSeq?: { q: number; e: number; r: number; l?: number };
+  // Khoá webhook nhận tài nguyên NotebookLM (POST /api/tainguyen, header X-Api-Key). Sinh 1 lần
+  // qua action "tainguyenGenKey" (admin), không có ô dán tay như key khác — bên đẩy lên copy khoá này.
+  tainguyenApiKey?: string;
   // Prompt sinh kịch bản video — sửa trong Cài đặt → Agents. Rỗng = dùng VIDEO_PROMPT mặc định (src/lib/video-prompt.ts).
   videoPrompt?: string;
 }

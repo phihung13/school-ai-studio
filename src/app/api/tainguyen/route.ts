@@ -1,70 +1,94 @@
-// Phục vụ tài nguyên NotebookLM trên đĩa (D:\TaiNguyen) cho trang nguyên tử.
-//   GET ?kc=KC-xxxxxxx        → manifest JSON (các định dạng × DOK của node)
-//   GET ?coverage=1           → bản đồ phủ KC → [định dạng]
-//   GET ?file=<rel>           → phát tệp (inline), hỗ trợ Range cho video/audio
-import fs from "fs";
+// Kho tài nguyên NotebookLM.
+//   GET  ?kc=KC-xxxxxxx  → danh sách tài nguyên của nguyên tử (JSON, có content với định dạng inline)
+//   GET  ?coverage=1     → bản đồ phủ atomId → [định dạng]
+//   GET  ?id=<tn_id>     → URL DÙNG THẲNG cho 1 tài nguyên: định dạng inline trả HTML/text thật
+//                          (mở tab mới/nhúng iframe đều ra nội dung), định dạng Drive → 302 sang Drive.
+//   POST                 → WEBHOOK nhận tài nguyên đẩy lên (header X-Api-Key, JSON body)
+//   DELETE ?id=          → gỡ 1 tài nguyên (đăng nhập + quyền sửa)
 import { NextRequest, NextResponse } from "next/server";
+import { getDB, persist, uid, nowIso, node, logActivity } from "@/lib/store";
 import { verifyToken, SESSION_COOKIE } from "@/lib/auth";
-import { resourcesForKC, coverage, safeResolve, CONTENT_TYPE, TAINGUYEN_DIR } from "@/lib/tainguyen";
+import { TN_FORMATS, isInline, listByAtom, coverageMap, driveOpenUrl } from "@/lib/tainguyen";
+import type { TnAsset } from "@/lib/shared";
 
 export const dynamic = "force-dynamic";
 
+function bad(msg: string, status = 400) { return NextResponse.json({ error: msg }, { status }); }
+
 export async function GET(req: NextRequest) {
   const user = verifyToken(req.cookies.get(SESSION_COOKIE)?.value);
-  if (!user) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
-
+  if (!user) return bad("Chưa đăng nhập", 401);
+  const db = getDB();
   const sp = req.nextUrl.searchParams;
-  const file = sp.get("file");
-  const kc = sp.get("kc");
 
-  if (sp.get("coverage") === "1") return NextResponse.json({ coverage: coverage(), dir: TAINGUYEN_DIR });
+  if (sp.get("coverage") === "1") return NextResponse.json({ coverage: coverageMap(db) });
 
-  if (kc && !file) return NextResponse.json({ kc, resources: resourcesForKC(kc), dir: TAINGUYEN_DIR });
-
-  if (file) {
-    const abs = safeResolve(file);
-    if (!abs) return NextResponse.json({ error: "Đường dẫn không hợp lệ" }, { status: 400 });
-    let st: fs.Stats;
-    try { st = fs.statSync(abs); if (!st.isFile()) throw new Error(); }
-    catch { return NextResponse.json({ error: "Không tìm thấy tệp" }, { status: 404 }); }
-
-    const ext = abs.slice(abs.lastIndexOf(".") + 1).toLowerCase();
-    const type = CONTENT_TYPE[ext] || "application/octet-stream";
-    const isMedia = /^(mp4|webm|mov|mp3|m4a|wav|ogg)$/.test(ext);
-    const baseHeaders: Record<string, string> = {
-      "Content-Type": type,
-      "Content-Disposition": "inline",
-      "Cache-Control": "private, max-age=60",
-    };
-
-    // Range (tua video/audio) — trả 206 với lát byte yêu cầu
-    const range = req.headers.get("range");
-    if (isMedia && range) {
-      const m = /bytes=(\d*)-(\d*)/.exec(range);
-      if (m) {
-        const total = st.size;
-        let start = m[1] ? parseInt(m[1], 10) : 0;
-        let end = m[2] ? parseInt(m[2], 10) : total - 1;
-        if (isNaN(start)) start = 0;
-        if (isNaN(end) || end >= total) end = total - 1;
-        if (start > end || start >= total) {
-          return new NextResponse(null, { status: 416, headers: { "Content-Range": `bytes */${total}` } });
-        }
-        const len = end - start + 1;
-        const buf = Buffer.alloc(len);
-        const fd = fs.openSync(abs, "r");
-        try { fs.readSync(fd, buf, 0, len, start); } finally { fs.closeSync(fd); }
-        return new NextResponse(new Uint8Array(buf), {
-          status: 206,
-          headers: { ...baseHeaders, "Accept-Ranges": "bytes", "Content-Range": `bytes ${start}-${end}/${total}`, "Content-Length": String(len) },
-        });
-      }
+  const id = sp.get("id");
+  if (id) {
+    const t = db.tainguyen.find((x) => x.id === id);
+    if (!t) return bad("Không tìm thấy", 404);
+    if (isInline(t.format)) {
+      const type = t.format === "Text" ? "text/markdown; charset=utf-8" : "text/html; charset=utf-8";
+      return new NextResponse(t.content || "", { headers: { "Content-Type": type, "Cache-Control": "private, max-age=60" } });
     }
-
-    const buf = fs.readFileSync(abs);
-    if (isMedia) baseHeaders["Accept-Ranges"] = "bytes";
-    return new NextResponse(new Uint8Array(buf), { headers: { ...baseHeaders, "Content-Length": String(st.size) } });
+    if (!t.driveFileId) return bad("Thiếu liên kết Drive", 500);
+    return NextResponse.redirect(driveOpenUrl(t.driveFileId));
   }
 
-  return NextResponse.json({ error: "Thiếu tham số (kc / file / coverage)" }, { status: 400 });
+  const kc = sp.get("kc");
+  if (kc) return NextResponse.json({ kc, resources: listByAtom(db, kc) });
+
+  return bad("Thiếu tham số (kc / id / coverage)");
+}
+
+// Webhook — không dùng cookie phiên (bên đẩy lên là Claude/skill, không có trình duyệt đăng nhập).
+// Xác thực bằng khoá riêng (settings.tainguyenApiKey, sinh qua action "tainguyenGenKey").
+export async function POST(req: NextRequest) {
+  const db = getDB();
+  const key = req.headers.get("x-api-key") || req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  if (!db.settings.tainguyenApiKey) return bad("Chưa bật webhook — vào Cài đặt sinh khoá trước", 503);
+  if (key !== db.settings.tainguyenApiKey) return bad("Sai khoá webhook (X-Api-Key)", 401);
+
+  const body = await req.json().catch(() => null);
+  if (!body) return bad("Body phải là JSON");
+  const { atomId, dok, format, name, driveFileId, mimeType, content, uploadedBy } = body as {
+    atomId?: string; dok?: number | null; format?: string; name?: string;
+    driveFileId?: string; mimeType?: string; content?: string; uploadedBy?: string;
+  };
+
+  if (!atomId) return bad("Thiếu atomId (mã KC)");
+  const atom = node(db, atomId);
+  if (!atom || atom.kind !== "atom") return bad(`Không tìm thấy nguyên tử ${atomId}`, 404);
+  if (!format || !TN_FORMATS.includes(format as never)) return bad(`format phải là một trong: ${TN_FORMATS.join(", ")}`);
+  if (dok != null && (!Number.isInteger(dok) || dok < 1 || dok > 3)) return bad("dok phải là 1, 2, 3 hoặc null");
+
+  const inline = isInline(format);
+  if (inline && !content) return bad(`Định dạng "${format}" cần "content" (nội dung HTML/markdown)`);
+  if (!inline && !driveFileId) return bad(`Định dạng "${format}" cần "driveFileId" (tài nguyên nặng trỏ Drive)`);
+
+  // ghi đè nếu đã có đúng (atomId, dok, format) — đẩy lại = cập nhật bản mới, không đẻ trùng
+  const existing = db.tainguyen.find((t) => t.atomId === atomId && t.format === format && (t.dok ?? null) === (dok ?? null));
+  const rec: TnAsset = {
+    id: existing?.id ?? uid("tn_"),
+    atomId, dok: dok ?? null, format, name: (name || atom.title).slice(0, 200),
+    uploadedAt: nowIso(), uploadedBy: uploadedBy || "Claude",
+    ...(inline ? { content: String(content).slice(0, 2_000_000) } : { driveFileId, mimeType }),
+  };
+  if (existing) Object.assign(existing, rec); else db.tainguyen.push(rec);
+  logActivity(rec.uploadedBy, existing ? "cập nhật" : "đẩy lên", `${format} — ${atom.code} (NotebookLM)`, `/atom/${atomId}`);
+  persist();
+  return NextResponse.json({ ok: true, id: rec.id, updated: !!existing });
+}
+
+export async function DELETE(req: NextRequest) {
+  const user = verifyToken(req.cookies.get(SESSION_COOKIE)?.value);
+  if (!user || user.role === "principal") return bad("Không có quyền", 403);
+  const db = getDB();
+  const id = req.nextUrl.searchParams.get("id");
+  const t = db.tainguyen.find((x) => x.id === id);
+  if (!t) return bad("Không tìm thấy", 404);
+  db.tainguyen = db.tainguyen.filter((x) => x.id !== id);
+  logActivity(user.name, "xoá", `tài nguyên ${t.format} (NotebookLM)`, `/atom/${t.atomId}`);
+  persist();
+  return NextResponse.json({ ok: true });
 }
