@@ -12,9 +12,11 @@ if (!BASE || !KEY) { console.log("[pull-db] Không có SUPABASE env → dùng st
 const REST = `${BASE}/rest/v1/studio_kv`;
 const H = { apikey: KEY, Authorization: `Bearer ${KEY}` };
 const DB_FILE = process.env.STUDIO_DB ? path.resolve(process.env.STUDIO_DB) : path.join(process.cwd(), "data", "studio.db");
+// PHẢI khớp COLLS/TABLE trong src/lib/store.ts — thiếu collection nào ở đây thì bản ghi collection đó
+// bị ÂM THẦM BỎ QUA khi khôi phục (kv-sync vẫn mirror lên Supabase đúng, nhưng pull-db không đọc lại được).
 const TABLE = { users: "users", tree: "tree", edges: "edges", packages: "packages", assets: "assets",
   reviews: "reviews", jobs: "jobs", proposals: "proposals", activity: "activity", cardStates: "card_states", questions: "questions", ladders: "ladders",
-  identityLinks: "identity_links" };
+  identityLinks: "identity_links", comments: "comments", tainguyen: "tainguyen" };
 const COLLS = Object.keys(TABLE);
 
 async function pullAll() {
