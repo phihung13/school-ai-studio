@@ -5,7 +5,7 @@ import { Search, PackageSearch, ExternalLink, Download, X, ArrowRight, Layers3, 
 import Shell from "@/components/shell";
 import { getData, Card, PageLoading, Empty, cls, M } from "@/components/ui";
 import { User } from "@/lib/shared";
-import { FMT_ORDER, FMT_ICON, FMT_LABEL, driveOpenUrl, driveDownloadUrl } from "@/components/notebook-resources";
+import { FMT_ORDER, FMT_ICON, FMT_LABEL, driveEmbedUrl, driveOpenUrl, driveDownloadUrl } from "@/components/notebook-resources";
 
 const INLINE_FMT = new Set(["Text", "Mindmap", "Quiz", "Flashcards"]);
 const resourceUrl = (id: string) => `/api/tainguyen?id=${encodeURIComponent(id)}`;
@@ -179,6 +179,8 @@ export default function LibraryPage() {
    Studio (nội dung lưu trong DB) — cùng một URL /api/tainguyen?id= cho cả hai loại. */
 function AssetList({ atom, resources }: { atom?: { id: string; code?: string; title: string; chain: string }; resources: TnRes[] }) {
   const doks = [...new Set(resources.map((r) => r.dok))].sort((a, b) => (a ?? 99) - (b ?? 99));
+  const [active, setActive] = useState<TnRes | null>(null);
+  useEffect(() => { setActive(resources[0] ?? null); }, [resources]);
 
   return (
     <>
@@ -197,36 +199,67 @@ function AssetList({ atom, resources }: { atom?: { id: string; code?: string; ti
 
       {resources.length === 0 ? (
         <Empty icon={<FolderOpen size={28} strokeWidth={1.75} />} title="Nguyên tử này chưa có tài nguyên" hint="Sinh học liệu bằng NotebookLM — tệp lưu theo mã KC sẽ tự hiện ở đây." />
-      ) : doks.map((d) => {
-        const files = resources.filter((r) => r.dok === d);
-        return (
-          <div key={String(d)} className="mb-4">
-            <div className="mb-1.5 flex items-baseline gap-2">
-              <h3 className={cls("rounded-full px-2.5 py-0.5 text-xs font-semibold", d ? "bg-brass-bg text-brass-ink" : "bg-surface-2 text-muted")}>{d ? `DOK ${d}` : "Chưa gắn DOK"}</h3>
-              <span className="text-[11px] text-muted">{files.length} tệp</span>
-            </div>
-            <Card className="divide-y divide-line p-0">
-              {files.map((r) => {
-                const Icon = FMT_ICON[r.format] || PackageSearch;
-                const inline = INLINE_FMT.has(r.format);
-                const openHref = inline ? resourceUrl(r.id) : r.driveFileId ? driveOpenUrl(r.driveFileId) : resourceUrl(r.id);
-                const dlHref = inline ? resourceUrl(r.id) : r.driveFileId ? driveDownloadUrl(r.driveFileId) : resourceUrl(r.id);
-                return (
-                  <div key={r.id} className="flex items-center gap-3 px-4 py-2.5 transition hover:bg-surface-2/60">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-brass-ink"><Icon size={16} strokeWidth={1.75} /></span>
-                    <a href={openHref} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] font-medium text-ink transition hover:text-brand">{r.name || FMT_LABEL[r.format] || r.format}</span>
-                      <span className="block text-[11px] text-muted">{FMT_LABEL[r.format] || r.format} · {inline ? "trong Studio" : "trên Drive"} · {new Date(r.uploadedAt).toLocaleDateString("vi-VN")}</span>
-                    </a>
-                    <a href={openHref} target="_blank" rel="noopener noreferrer" title="Mở tab mới" className="shrink-0 rounded-md p-1.5 text-muted transition hover:bg-brand-bg/50 hover:text-brand"><ExternalLink size={14} /></a>
-                    {!inline && <a href={dlHref} title="Tải về" className="shrink-0 rounded-md p-1.5 text-muted transition hover:bg-brand-bg/50 hover:text-brand"><Download size={14} /></a>}
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
+          <div className="space-y-4">
+            {doks.map((d) => {
+              const files = resources.filter((r) => r.dok === d);
+              return (
+                <div key={String(d)}>
+                  <div className="mb-1.5 flex items-baseline gap-2">
+                    <h3 className={cls("rounded-full px-2.5 py-0.5 text-xs font-semibold", d ? "bg-brass-bg text-brass-ink" : "bg-surface-2 text-muted")}>{d ? `DOK ${d}` : "Chưa gắn DOK"}</h3>
+                    <span className="text-[11px] text-muted">{files.length} tệp</span>
                   </div>
-                );
-              })}
-            </Card>
+                  <Card className="divide-y divide-line p-0">
+                    {files.map((r) => {
+                      const Icon = FMT_ICON[r.format] || PackageSearch;
+                      const inline = INLINE_FMT.has(r.format);
+                      const dlHref = inline ? resourceUrl(r.id) : r.driveFileId ? driveDownloadUrl(r.driveFileId) : resourceUrl(r.id);
+                      return (
+                        <div key={r.id} className={cls("flex items-center gap-3 px-4 py-2.5 transition hover:bg-surface-2/60", active?.id === r.id && "bg-brand-bg/40")}>
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-brass-ink"><Icon size={16} strokeWidth={1.75} /></span>
+                          <button onClick={() => setActive(r)} className="min-w-0 flex-1 text-left">
+                            <span className={cls("block truncate text-[13px] font-medium transition", active?.id === r.id ? "text-brand" : "text-ink hover:text-brand")}>{r.name || FMT_LABEL[r.format] || r.format}</span>
+                            <span className="block text-[11px] text-muted">{FMT_LABEL[r.format] || r.format} · {inline ? "trong Studio" : "trên Drive"} · {new Date(r.uploadedAt).toLocaleDateString("vi-VN")}</span>
+                          </button>
+                          {!inline && r.driveFileId && <a href={driveOpenUrl(r.driveFileId)} target="_blank" rel="noopener noreferrer" title="Mở trên Drive" className="shrink-0 rounded-md p-1.5 text-muted transition hover:bg-brand-bg/50 hover:text-brand"><ExternalLink size={14} /></a>}
+                          <a href={dlHref} title="Tải về" className="shrink-0 rounded-md p-1.5 text-muted transition hover:bg-brand-bg/50 hover:text-brand"><Download size={14} /></a>
+                        </div>
+                      );
+                    })}
+                  </Card>
+                </div>
+              );
+            })}
           </div>
-        );
-      })}
+          <div className="min-w-0">
+            {active ? (
+              <Card className="overflow-hidden p-0">
+                <div className="flex items-center gap-2 border-b border-line bg-surface-2/50 px-3 py-2">
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
+                    {FMT_LABEL[active.format] || active.format}{active.dok ? ` · DOK ${active.dok}` : ""}{active.name ? ` — ${active.name}` : ""}
+                  </span>
+                </div>
+                <AssetViewer r={active} />
+              </Card>
+            ) : <p className="text-sm text-muted">Chọn một tài nguyên để xem.</p>}
+          </div>
+        </div>
+      )}
     </>
   );
+}
+
+// Nhúng xem trực tiếp: 4 định dạng nhẹ chạy tương tác qua srcDoc (nội dung lưu trong Studio),
+// 5 định dạng nặng nhúng khung xem sẵn có của Drive — không mở tab/trang riêng.
+function AssetViewer({ r }: { r: TnRes }) {
+  const frame = "h-[70vh] max-h-[640px] w-full";
+  if (INLINE_FMT.has(r.format)) {
+    if (r.format === "Text") {
+      return <div className="max-h-[70vh] overflow-auto px-5 py-4"><pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-ink-2">{r.content || ""}</pre></div>;
+    }
+    return <iframe srcDoc={r.content || ""} className={frame} sandbox="allow-scripts allow-same-origin allow-popups" title={r.name} />;
+  }
+  if (!r.driveFileId) return <div className="p-6 text-center text-sm text-muted">Thiếu liên kết Drive cho tài nguyên này.</div>;
+  return <iframe key={r.driveFileId} src={driveEmbedUrl(r.driveFileId)} className={frame} allow="autoplay" title={r.name} />;
 }
