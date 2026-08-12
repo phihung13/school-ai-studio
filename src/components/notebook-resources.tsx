@@ -164,7 +164,7 @@ export function Viewer({ r }: { r: TnAsset | TnAssetLike }) {
       <div className="flex flex-col items-center justify-center gap-4 px-8 py-16">
         <Mic size={40} className="text-brass-ink" />
         <p className="max-w-sm text-center text-sm text-ink-2">{r.name || FMT_LABEL[r.format] || r.format}</p>
-        <audio controls preload="none" className="w-full max-w-md" src={driveDownloadUrl(r.driveFileId)}>
+        <audio controls preload="none" className="w-full max-w-md" src={`/api/tainguyen?id=${r.id}&stream=1`}>
           Trình duyệt không hỗ trợ phát âm thanh.
         </audio>
       </div>
@@ -172,4 +172,4 @@ export function Viewer({ r }: { r: TnAsset | TnAssetLike }) {
   }
   return <iframe key={r.driveFileId} src={driveEmbedUrl(r.driveFileId)} className={frame} allow="autoplay" title={r.name} />;
 }
-type TnAssetLike = { format: string; name: string; content?: string; driveFileId?: string };
+type TnAssetLike = { id: string; format: string; name: string; content?: string; driveFileId?: string };

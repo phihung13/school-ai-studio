@@ -15,6 +15,23 @@ export const dynamic = "force-dynamic";
 
 function bad(msg: string, status = 400) { return NextResponse.json({ error: msg }, { status }); }
 
+// Phát trực tiếp file Drive qua server (không redirect sang Drive) — cần cho <audio>: link
+// tải thẳng của Drive không tin cậy cho phát/tua (không luôn hỗ trợ Range, có màn xác nhận quét
+// virus với file lớn), nên ta lấy hộ và chuyển tiếp byte + header Range để trình duyệt tua được.
+async function streamDrive(driveFileId: string, mimeType: string | undefined, range: string | null) {
+  const upstream = await fetch(`https://drive.google.com/uc?export=download&id=${driveFileId}`, {
+    headers: range ? { Range: range } : {},
+  });
+  if (!upstream.ok && upstream.status !== 206) return bad("Không tải được tệp từ Drive", 502);
+  const headers = new Headers();
+  headers.set("Content-Type", mimeType || upstream.headers.get("content-type") || "application/octet-stream");
+  headers.set("Accept-Ranges", "bytes");
+  headers.set("Cache-Control", "private, max-age=3600");
+  const cl = upstream.headers.get("content-length"); if (cl) headers.set("Content-Length", cl);
+  const cr = upstream.headers.get("content-range"); if (cr) headers.set("Content-Range", cr);
+  return new NextResponse(upstream.body, { status: upstream.status === 206 ? 206 : 200, headers });
+}
+
 export async function GET(req: NextRequest) {
   const user = verifyToken(req.cookies.get(SESSION_COOKIE)?.value);
   if (!user) return bad("Chưa đăng nhập", 401);
@@ -32,6 +49,7 @@ export async function GET(req: NextRequest) {
       return new NextResponse(t.content || "", { headers: { "Content-Type": type, "Cache-Control": "private, max-age=60" } });
     }
     if (!t.driveFileId) return bad("Thiếu liên kết Drive", 500);
+    if (sp.get("stream") === "1") return streamDrive(t.driveFileId, t.mimeType, req.headers.get("range"));
     return NextResponse.redirect(driveOpenUrl(t.driveFileId));
   }
 
