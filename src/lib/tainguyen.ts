@@ -29,6 +29,7 @@ export interface TnResource {
   dok: number | null;      // 1..3 hoặc null
   format: TnFormat | string;
   name: string;            // phần tên sau format (đã bỏ DOKn)
+  file: string;            // TÊN TỆP THẬT trên đĩa (hiện y như khi mở thư mục)
   ext: string;             // đuôi không dấu chấm, thường
   viewer: TnViewer;
   rel: string;             // đường dẫn tương đối trong TAINGUYEN_DIR (khoá serve)
@@ -84,7 +85,7 @@ function walk(dir: string, root: string, out: TnResource[]): void {
     name = name.replace(/^DOK\d[_-]?/i, "").replace(/[-_]+/g, " ").trim();
     let st: fs.Stats; try { st = fs.statSync(full); } catch { continue; }
     const folder = parts.slice(0, kcIdx).join(" / ");   // Môn / Lớp / Chương / Bài (theo đĩa)
-    out.push({ kc, dok, format, name, ext, viewer: refineViewer(format, ext), rel, folder, size: st.size, mtime: st.mtimeMs });
+    out.push({ kc, dok, format, name, file, ext, viewer: refineViewer(format, ext), rel, folder, size: st.size, mtime: st.mtimeMs });
   }
 }
 

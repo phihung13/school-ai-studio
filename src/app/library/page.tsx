@@ -7,7 +7,7 @@ import { getData, Card, PageLoading, Empty, cls, M } from "@/components/ui";
 import { User } from "@/lib/shared";
 import { FMT_ORDER, FMT_ICON, FMT_LABEL, fileUrl } from "@/components/notebook-resources";
 
-interface TnRes { kc: string; dok: number | null; format: string; name: string; ext: string; viewer: string; rel: string; folder: string; size: number; mtime: number }
+interface TnRes { kc: string; dok: number | null; format: string; name: string; file: string; ext: string; viewer: string; rel: string; folder: string; size: number; mtime: number }
 interface TnFolder { id: string; kind: string; title: string; code?: string; resources: number; atomsWith: number; atomsTotal: number; formats: string[] }
 interface Crumb { id: string; title: string; kind: string }
 interface SearchHit { atomId: string; code?: string; title: string; chain: string; resources: TnRes[] }
@@ -116,8 +116,8 @@ export default function LibraryPage() {
                     ))}
                   </div>
             ) : data.level === "atom" || data.level === "unmatched" ? (
-              /* ═══ CẤP LÁ — mỗi định dạng một dòng, DOK là biến thể bên trong ═══ */
-              <FormatList atom={data.atom} resources={data.resources || []} />
+              /* ═══ CẤP LÁ — thuần Drive: chỉ tệp đang có, xếp dưới đúng mức DOK ═══ */
+              <DriveList atom={data.atom} resources={data.resources || []} />
             ) : (data.folders || []).length === 0 ? (
               <Empty icon={<PackageSearch size={28} strokeWidth={1.75} />} title={onlyFilled ? "Mục này chưa có tài nguyên" : "Mục này chưa có nội dung"}
                 hint={onlyFilled ? "Bấm “Hiện cả mục chưa có tài nguyên” để xem toàn bộ danh mục." : "Sinh học liệu bằng NotebookLM — tệp lưu theo mã KC sẽ tự hiện ở đây."} />
@@ -173,12 +173,11 @@ export default function LibraryPage() {
   );
 }
 
-/* Cấp lá (nguyên tử): mỗi ĐỊNH DẠNG một dòng; các mức DOK là biến thể nằm trong dòng đó
-   → mở nguyên tử ra là thấy ngay "có những định dạng nào", rồi mới tới "định dạng này chỉ có DOK 1". */
-function FormatList({ atom, resources }: { atom?: { id: string; code?: string; title: string; chain: string }; resources: TnRes[] }) {
-  const have = FMT_ORDER.filter((f) => resources.some((r) => r.format === f));
-  const extra = [...new Set(resources.map((r) => r.format))].filter((f) => !FMT_ORDER.includes(f as never));
-  const doksAll = [...new Set(resources.map((r) => r.dok).filter((d): d is number => d != null))].sort();
+/* Cấp lá (nguyên tử): THUẦN DRIVE — chỉ liệt kê tệp thật sự có trên đĩa, xếp dưới đúng
+   mức DOK của nó. Không kẻ sẵn 9 định dạng, không ghi "chưa có": mở ra thấy đúng như
+   mở thư mục. Node chỉ có DOK1 thì chỉ thấy một mục DOK 1. */
+function DriveList({ atom, resources }: { atom?: { id: string; code?: string; title: string; chain: string }; resources: TnRes[] }) {
+  const doks = [...new Set(resources.map((r) => r.dok))].sort((a, b) => (a ?? 99) - (b ?? 99));
 
   return (
     <>
@@ -197,43 +196,33 @@ function FormatList({ atom, resources }: { atom?: { id: string; code?: string; t
 
       {resources.length === 0 ? (
         <Empty icon={<FolderOpen size={28} strokeWidth={1.75} />} title="Nguyên tử này chưa có tài nguyên" hint="Sinh học liệu bằng NotebookLM — tệp lưu theo mã KC sẽ tự hiện ở đây." />
-      ) : (
-        <>
-          <p className="mb-2 text-[13px] text-ink-2">
-            <b className="text-ink">{have.length + extra.length}/9</b> định dạng · mức độ có sẵn: <b className="text-ink">{doksAll.length ? doksAll.map((d) => `DOK ${d}`).join(", ") : "chưa gắn DOK"}</b>
-          </p>
-          <Card className="divide-y divide-line p-0">
-            {[...FMT_ORDER, ...extra].map((f) => {
-              const files = resources.filter((r) => r.format === f).sort((a, b) => (a.dok ?? 99) - (b.dok ?? 99));
-              const Icon = FMT_ICON[f] || PackageSearch;
-              return (
-                <div key={f} className={cls("flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5 transition", files.length ? "hover:bg-surface-2/60" : "opacity-45")}>
-                  <span className={cls("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", files.length ? "bg-surface-2 text-brass-ink" : "bg-surface-2 text-line-strong")}>
-                    <Icon size={16} strokeWidth={1.75} />
-                  </span>
-                  <span className={cls("min-w-[130px] text-[13px]", files.length ? "font-medium text-ink" : "text-muted")}>{FMT_LABEL[f] || f}</span>
-                  {files.length === 0 ? (
-                    <span className="text-xs text-line-strong">chưa có</span>
-                  ) : (
-                    <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-                      {files.map((r) => (
-                        <span key={r.rel} className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-2 py-1 transition hover:border-brand/60">
-                          <a href={fileUrl(r.rel)} target="_blank" rel="noopener noreferrer" className="text-[11px] font-semibold text-ink-2 transition hover:text-brand" title={`Mở ${FMT_LABEL[f] || f}${r.dok ? ` — DOK ${r.dok}` : ""}`}>
-                            {r.dok ? `DOK ${r.dok}` : "Bản chuẩn"}
-                          </a>
-                          <span className="text-[10px] text-muted">{r.ext.toUpperCase()} · {KB(r.size)}</span>
-                          <a href={fileUrl(r.rel)} target="_blank" rel="noopener noreferrer" title="Mở tab mới" className="text-muted transition hover:text-brand"><ExternalLink size={11} /></a>
-                          <a href={fileUrl(r.rel)} download title="Tải về" className="text-muted transition hover:text-brand"><Download size={11} /></a>
-                        </span>
-                      ))}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </Card>
-        </>
-      )}
+      ) : doks.map((d) => {
+        const files = resources.filter((r) => r.dok === d);
+        return (
+          <div key={String(d)} className="mb-4">
+            <div className="mb-1.5 flex items-baseline gap-2">
+              <h3 className={cls("rounded-full px-2.5 py-0.5 text-xs font-semibold", d ? "bg-brass-bg text-brass-ink" : "bg-surface-2 text-muted")}>{d ? `DOK ${d}` : "Chưa gắn DOK"}</h3>
+              <span className="text-[11px] text-muted">{files.length} tệp</span>
+            </div>
+            <Card className="divide-y divide-line p-0">
+              {files.map((r) => {
+                const Icon = FMT_ICON[r.format] || PackageSearch;
+                return (
+                  <div key={r.rel} className="flex items-center gap-3 px-4 py-2.5 transition hover:bg-surface-2/60">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-brass-ink"><Icon size={16} strokeWidth={1.75} /></span>
+                    <a href={fileUrl(r.rel)} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] font-medium text-ink transition hover:text-brand">{r.file || `${r.format}.${r.ext}`}</span>
+                      <span className="block text-[11px] text-muted">{FMT_LABEL[r.format] || r.format} · {KB(r.size)} · {new Date(r.mtime).toLocaleDateString("vi-VN")}</span>
+                    </a>
+                    <a href={fileUrl(r.rel)} target="_blank" rel="noopener noreferrer" title="Mở tab mới" className="shrink-0 rounded-md p-1.5 text-muted transition hover:bg-brand-bg/50 hover:text-brand"><ExternalLink size={14} /></a>
+                    <a href={fileUrl(r.rel)} download title="Tải về" className="shrink-0 rounded-md p-1.5 text-muted transition hover:bg-brand-bg/50 hover:text-brand"><Download size={14} /></a>
+                  </div>
+                );
+              })}
+            </Card>
+          </div>
+        );
+      })}
     </>
   );
 }
