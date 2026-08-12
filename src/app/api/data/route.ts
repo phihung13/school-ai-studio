@@ -357,15 +357,19 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ level: "search", q, breadcrumb: [], folders: [], results: hits, stats: { resources: hits.reduce((s, g) => s + g.resources.length, 0), atomsWith: hits.length, atomsTotal: 0 }, unmatched: orphans.length });
       }
 
-      // ── Cấp LÁ: đứng trên một nguyên tử → trả tài nguyên của nó ──
+      // ── Cấp LÁ (nguyên tử): trả THẲNG danh sách tệp, mỗi tệp giữ đúng DOK của nó.
+      //    DOK KHÔNG phải một cấp thư mục phải bấm vào — chỉ là nhãn phân nhóm khi hiển thị.
       const cur = nodeId && nodeId !== "__unmatched" ? node(db, nodeId) : undefined;
       if (cur && cur.kind === "atom") {
+        const mine = byAtom.get(cur.id) || [];
+        // sắp theo DOK trước (1→2→3, không rõ DOK xuống cuối), rồi theo thứ tự định dạng chuẩn
+        const files = [...mine].sort((a, b) => (a.dok ?? 99) - (b.dok ?? 99) || TN_FORMATS.indexOf(a.format as never) - TN_FORMATS.indexOf(b.format as never));
         return NextResponse.json({
           level: "atom",
           breadcrumb: ancestors(db, cur.id).map((n) => ({ id: n.id, title: n.title, kind: n.kind })).concat([{ id: cur.id, title: cur.title, kind: cur.kind }]),
           atom: { id: cur.id, code: cur.code, title: cur.title, chain: chainOf.get(cur.id) || ancestors(db, cur.id).map((n) => n.title).join(" › ") },
-          folders: [], resources: sortRes(byAtom.get(cur.id) || []),
-          stats: { resources: (byAtom.get(cur.id) || []).length, atomsWith: 0, atomsTotal: 0 }, unmatched: orphans.length,
+          folders: [], resources: files,
+          stats: { resources: files.length, atomsWith: 0, atomsTotal: 0 }, unmatched: orphans.length,
         });
       }
 

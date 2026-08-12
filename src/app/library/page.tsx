@@ -117,7 +117,7 @@ export default function LibraryPage() {
                   </div>
             ) : data.level === "atom" || data.level === "unmatched" ? (
               /* ═══ CẤP LÁ — ma trận Định dạng × DOK ═══ */
-              <ResourceMatrix atom={data.atom} resources={data.resources || []} />
+              <FileList atom={data.atom} resources={data.resources || []} />
             ) : (data.folders || []).length === 0 ? (
               <Empty icon={<PackageSearch size={28} strokeWidth={1.75} />} title="Mục này chưa có tài nguyên"
                 hint={showAll ? "Sinh học liệu bằng NotebookLM — tệp lưu theo mã KC sẽ tự hiện ở đây." : "Bấm “Hiện cả mục chưa có tài nguyên” để xem toàn bộ danh mục."} />
@@ -171,12 +171,10 @@ export default function LibraryPage() {
   );
 }
 
-/* Cấp lá: mỗi định dạng một hàng, mỗi DOK một cột → nhìn phát biết có gì, thiếu gì. */
-function ResourceMatrix({ atom, resources }: { atom?: { id: string; code?: string; title: string; chain: string }; resources: TnRes[] }) {
-  const doks = [...new Set(resources.map((r) => r.dok))].sort((a, b) => (a ?? 9) - (b ?? 9));
-  const cols = doks.length ? doks : [null];
-  const formats = [...FMT_ORDER, ...[...new Set(resources.map((r) => r.format))].filter((f) => !FMT_ORDER.includes(f as never))];
-  const at = (f: string, d: number | null) => resources.find((r) => r.format === f && r.dok === d);
+/* Cấp lá: danh sách tệp như Drive, PHÂN NHÓM theo đúng DOK của từng tệp
+   (DOK không phải thư mục phải bấm vào — chỉ là nhãn nhóm, node nào có 1 DOK thì thấy 1 nhóm). */
+function FileList({ atom, resources }: { atom?: { id: string; code?: string; title: string; chain: string }; resources: TnRes[] }) {
+  const doks = [...new Set(resources.map((r) => r.dok))].sort((a, b) => (a ?? 99) - (b ?? 99));
 
   return (
     <>
@@ -192,51 +190,42 @@ function ResourceMatrix({ atom, resources }: { atom?: { id: string; code?: strin
           </Link>
         </div>
       )}
-      <Card className="overflow-x-auto p-0">
-        <table className="w-full min-w-[520px] border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-line bg-surface-2/50">
-              <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted">Định dạng</th>
-              {cols.map((d) => <th key={String(d)} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted">{d ? `DOK ${d}` : "Bản chuẩn"}</th>)}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-line">
-            {formats.map((f) => {
-              const Icon = FMT_ICON[f] || PackageSearch;
-              const any = cols.some((d) => at(f, d));
-              return (
-                <tr key={f} className={cls("transition", any ? "hover:bg-surface-2/50" : "opacity-45")}>
-                  <td className="px-4 py-2">
-                    <span className="flex items-center gap-2">
-                      <Icon size={15} className={any ? "text-brass-ink" : "text-line-strong"} />
-                      <span className={cls("text-[13px]", any ? "font-medium text-ink" : "text-muted")}>{FMT_LABEL[f] || f}</span>
-                    </span>
-                  </td>
-                  {cols.map((d) => {
-                    const r = at(f, d);
-                    return (
-                      <td key={String(d)} className="px-3 py-2">
-                        {r ? (
-                          <span className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-2 py-1 transition hover:border-brand/60">
-                            <a href={fileUrl(r.rel)} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-ink-2 transition hover:text-brand" title={`Mở ${FMT_LABEL[f] || f}`}>
-                              {r.ext.toUpperCase()} <span className="text-[10px] text-muted">{KB(r.size)}</span>
-                            </a>
-                            <a href={fileUrl(r.rel)} target="_blank" rel="noopener noreferrer" title="Mở tab mới" className="text-muted transition hover:text-brand"><ExternalLink size={12} /></a>
-                            <a href={fileUrl(r.rel)} download title="Tải về" className="text-muted transition hover:text-brand"><Download size={12} /></a>
-                          </span>
-                        ) : <span className="text-xs text-line-strong">—</span>}
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </Card>
-      {resources.length === 0 && (
-        <div className="mt-3"><Empty icon={<FolderOpen size={28} strokeWidth={1.75} />} title="Nguyên tử này chưa có tài nguyên" hint="Sinh học liệu bằng NotebookLM — tệp lưu theo mã KC sẽ tự hiện ở đây." /></div>
-      )}
+
+      {resources.length === 0 ? (
+        <Empty icon={<FolderOpen size={28} strokeWidth={1.75} />} title="Nguyên tử này chưa có tài nguyên" hint="Sinh học liệu bằng NotebookLM — tệp lưu theo mã KC sẽ tự hiện ở đây." />
+      ) : doks.map((d) => {
+        const files = resources.filter((r) => r.dok === d);
+        const missing = FMT_ORDER.filter((f) => !files.some((r) => r.format === f));
+        return (
+          <div key={String(d)} className="mb-4">
+            <div className="mb-1.5 flex flex-wrap items-baseline gap-2">
+              <h3 className={cls("rounded-full px-2.5 py-0.5 text-xs font-semibold", d ? "bg-brass-bg text-brass-ink" : "bg-surface-2 text-muted")}>
+                {d ? `DOK ${d}` : "Chưa gắn DOK"}
+              </h3>
+              <span className="text-[11px] text-muted">{files.length} tệp · {FMT_ORDER.length - missing.length}/9 định dạng</span>
+              {missing.length > 0 && missing.length < 9 && (
+                <span className="text-[11px] text-line-strong">chưa có: {missing.map((f) => FMT_LABEL[f] || f).join(", ")}</span>
+              )}
+            </div>
+            <Card className="divide-y divide-line p-0">
+              {files.map((r) => {
+                const Icon = FMT_ICON[r.format] || PackageSearch;
+                return (
+                  <div key={r.rel} className="flex items-center gap-3 px-4 py-2.5 transition hover:bg-surface-2/60">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-brass-ink"><Icon size={16} strokeWidth={1.75} /></span>
+                    <a href={fileUrl(r.rel)} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] font-medium text-ink transition hover:text-brand">{FMT_LABEL[r.format] || r.format}{r.name ? <span className="font-normal text-ink-2"> — {r.name}</span> : null}</span>
+                      <span className="block text-[11px] text-muted">{r.ext.toUpperCase()} · {KB(r.size)} · {new Date(r.mtime).toLocaleDateString("vi-VN")}</span>
+                    </a>
+                    <a href={fileUrl(r.rel)} target="_blank" rel="noopener noreferrer" title="Mở tab mới" className="shrink-0 rounded-md p-1.5 text-muted transition hover:bg-brand-bg/50 hover:text-brand"><ExternalLink size={14} /></a>
+                    <a href={fileUrl(r.rel)} download title="Tải về" className="shrink-0 rounded-md p-1.5 text-muted transition hover:bg-brand-bg/50 hover:text-brand"><Download size={14} /></a>
+                  </div>
+                );
+              })}
+            </Card>
+          </div>
+        );
+      })}
     </>
   );
 }
