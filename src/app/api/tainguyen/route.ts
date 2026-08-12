@@ -19,12 +19,18 @@ function bad(msg: string, status = 400) { return NextResponse.json({ error: msg 
 // tải thẳng của Drive không tin cậy cho phát/tua (không luôn hỗ trợ Range, có màn xác nhận quét
 // virus với file lớn), nên ta lấy hộ và chuyển tiếp byte + header Range để trình duyệt tua được.
 async function streamDrive(driveFileId: string, mimeType: string | undefined, range: string | null) {
-  const upstream = await fetch(`https://drive.google.com/uc?export=download&id=${driveFileId}`, {
+  // confirm=t: bỏ qua màn "không quét được virus" mà Drive chèn cho file lớn — thiếu param này
+  // thì upstream trả về trang HTML xác nhận thay vì byte thật, khiến <audio> kẹt ở 00:00.
+  const upstream = await fetch(`https://drive.google.com/uc?export=download&confirm=t&id=${driveFileId}`, {
     headers: range ? { Range: range } : {},
   });
   if (!upstream.ok && upstream.status !== 206) return bad("Không tải được tệp từ Drive", 502);
+  const upstreamType = upstream.headers.get("content-type") || "";
+  if (upstreamType.startsWith("text/html")) {
+    return bad("Drive chặn tải trực tiếp file này (cần chia sẻ công khai \"Bất kỳ ai có đường liên kết\")", 502);
+  }
   const headers = new Headers();
-  headers.set("Content-Type", mimeType || upstream.headers.get("content-type") || "application/octet-stream");
+  headers.set("Content-Type", mimeType || upstreamType || "application/octet-stream");
   headers.set("Accept-Ranges", "bytes");
   headers.set("Cache-Control", "private, max-age=3600");
   const cl = upstream.headers.get("content-length"); if (cl) headers.set("Content-Length", cl);
