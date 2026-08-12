@@ -327,7 +327,9 @@ export async function GET(req: NextRequest) {
     case "tainguyen": {
       const q = (req.nextUrl.searchParams.get("q") || "").toLowerCase().trim();
       const nodeId = req.nextUrl.searchParams.get("node") || "";
-      const showAll = req.nextUrl.searchParams.get("all") === "1";   // hiện cả mục CHƯA có tài nguyên
+      // Mặc định hiện TOÀN BỘ danh mục (như duyệt thư mục) để thấy luôn mục nào chưa có tài nguyên;
+      // ?filled=1 → chỉ hiện mục đã có.
+      const onlyFilled = req.nextUrl.searchParams.get("filled") === "1";
 
       // ── Join tài nguyên ↔ cây, rồi cộng dồn số liệu lên mọi tổ tiên ──
       const byAtom = new Map<string, TnResource[]>();
@@ -385,7 +387,7 @@ export async function GET(req: NextRequest) {
       const kids = nodeId ? children(db, nodeId) : db.tree.filter((n) => n.kind === "subject").sort((a, b) => a.order - b.order);
       interface TnFolder { id: string; kind: string; title: string; code?: string; resources: number; atomsWith: number; atomsTotal: number; formats: string[] }
       const folders: TnFolder[] = kids                       // children() đã sắp theo `order` → giữ nguyên thứ tự cây
-        .filter((k) => showAll || (resCount.get(k.id) || 0) > 0)
+        .filter((k) => !onlyFilled || (resCount.get(k.id) || 0) > 0)
         .map((k) => {
           const under = k.kind === "atom" ? [k] : atomsUnder(db, k.id);
           return {
