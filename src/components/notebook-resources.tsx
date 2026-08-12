@@ -21,6 +21,7 @@ export const FMT_LABEL: Record<string, string> = {
   "Audio-tranh-luan": "Audio tranh luận", Podcast: "Podcast", Slide: "Slide", Quiz: "Quiz", Flashcards: "Flashcards",
 };
 const INLINE = new Set(["Text", "Mindmap", "Quiz", "Flashcards"]);
+const AUDIO = new Set(["Podcast", "Audio-tranh-luan"]);
 export const driveEmbedUrl = (id: string) => `https://drive.google.com/file/d/${id}/preview`;
 export const driveOpenUrl = (id: string) => `https://drive.google.com/file/d/${id}/view`;
 export const driveDownloadUrl = (id: string) => `https://drive.google.com/uc?export=download&id=${id}`;
@@ -101,7 +102,7 @@ export default function NotebookResources({ kc }: { kc: string }) {
         </div>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
+      <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
         <div className="space-y-1.5">
           {byFormat.map(({ format, items }) => {
             const Icon = FMT_ICON[format] || FileText;
@@ -148,15 +149,27 @@ export default function NotebookResources({ kc }: { kc: string }) {
   );
 }
 
-function Viewer({ r }: { r: TnAsset }) {
-  const frame = "h-[70vh] max-h-[640px] w-full";
+export function Viewer({ r }: { r: TnAsset | TnAssetLike }) {
+  const frame = "h-[80vh] max-h-[900px] w-full";
   if (INLINE.has(r.format)) {
     if (r.format === "Text") {
-      return <div className="max-h-[70vh] overflow-auto px-5 py-4"><pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-ink-2">{r.content || ""}</pre></div>;
+      return <div className="max-h-[80vh] overflow-auto px-5 py-4"><pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-ink-2">{r.content || ""}</pre></div>;
     }
     // Mindmap/Quiz/Flashcards: HTML tự chứa, chạy tương tác thật (bấm chọn, lật thẻ…) qua srcDoc — cô lập bằng sandbox.
     return <iframe srcDoc={r.content || ""} className={frame} sandbox="allow-scripts allow-same-origin allow-popups" title={r.name} />;
   }
   if (!r.driveFileId) return <div className="p-6 text-center text-sm text-muted">Thiếu liên kết Drive cho tài nguyên này.</div>;
+  if (AUDIO.has(r.format)) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 px-8 py-16">
+        <Mic size={40} className="text-brass-ink" />
+        <p className="max-w-sm text-center text-sm text-ink-2">{r.name || FMT_LABEL[r.format] || r.format}</p>
+        <audio controls preload="none" className="w-full max-w-md" src={driveDownloadUrl(r.driveFileId)}>
+          Trình duyệt không hỗ trợ phát âm thanh.
+        </audio>
+      </div>
+    );
+  }
   return <iframe key={r.driveFileId} src={driveEmbedUrl(r.driveFileId)} className={frame} allow="autoplay" title={r.name} />;
 }
+type TnAssetLike = { format: string; name: string; content?: string; driveFileId?: string };

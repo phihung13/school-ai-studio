@@ -5,7 +5,7 @@ import { Search, PackageSearch, ExternalLink, Download, X, ArrowRight, Layers3, 
 import Shell from "@/components/shell";
 import { getData, Card, PageLoading, Empty, cls, M } from "@/components/ui";
 import { User } from "@/lib/shared";
-import { FMT_ORDER, FMT_ICON, FMT_LABEL, driveEmbedUrl, driveOpenUrl, driveDownloadUrl } from "@/components/notebook-resources";
+import { FMT_ORDER, FMT_ICON, FMT_LABEL, driveOpenUrl, driveDownloadUrl, Viewer } from "@/components/notebook-resources";
 
 const INLINE_FMT = new Set(["Text", "Mindmap", "Quiz", "Flashcards"]);
 const resourceUrl = (id: string) => `/api/tainguyen?id=${encodeURIComponent(id)}`;
@@ -200,7 +200,7 @@ function AssetList({ atom, resources }: { atom?: { id: string; code?: string; ti
       {resources.length === 0 ? (
         <Empty icon={<FolderOpen size={28} strokeWidth={1.75} />} title="Nguyên tử này chưa có tài nguyên" hint="Sinh học liệu bằng NotebookLM — tệp lưu theo mã KC sẽ tự hiện ở đây." />
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
+        <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
           <div className="space-y-4">
             {doks.map((d) => {
               const files = resources.filter((r) => r.dok === d);
@@ -240,7 +240,7 @@ function AssetList({ atom, resources }: { atom?: { id: string; code?: string; ti
                     {FMT_LABEL[active.format] || active.format}{active.dok ? ` · DOK ${active.dok}` : ""}{active.name ? ` — ${active.name}` : ""}
                   </span>
                 </div>
-                <AssetViewer r={active} />
+                <Viewer r={active} />
               </Card>
             ) : <p className="text-sm text-muted">Chọn một tài nguyên để xem.</p>}
           </div>
@@ -248,18 +248,4 @@ function AssetList({ atom, resources }: { atom?: { id: string; code?: string; ti
       )}
     </>
   );
-}
-
-// Nhúng xem trực tiếp: 4 định dạng nhẹ chạy tương tác qua srcDoc (nội dung lưu trong Studio),
-// 5 định dạng nặng nhúng khung xem sẵn có của Drive — không mở tab/trang riêng.
-function AssetViewer({ r }: { r: TnRes }) {
-  const frame = "h-[70vh] max-h-[640px] w-full";
-  if (INLINE_FMT.has(r.format)) {
-    if (r.format === "Text") {
-      return <div className="max-h-[70vh] overflow-auto px-5 py-4"><pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-ink-2">{r.content || ""}</pre></div>;
-    }
-    return <iframe srcDoc={r.content || ""} className={frame} sandbox="allow-scripts allow-same-origin allow-popups" title={r.name} />;
-  }
-  if (!r.driveFileId) return <div className="p-6 text-center text-sm text-muted">Thiếu liên kết Drive cho tài nguyên này.</div>;
-  return <iframe key={r.driveFileId} src={driveEmbedUrl(r.driveFileId)} className={frame} allow="autoplay" title={r.name} />;
 }
