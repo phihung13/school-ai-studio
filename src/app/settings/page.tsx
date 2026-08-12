@@ -107,14 +107,16 @@ function TutorCard({ tutor, isAdmin, onSaved }: { tutor: TutorStatus; isAdmin: b
 function TaiNguyenCard({ tn, isAdmin, onSaved }: { tn: TnStatus; isAdmin: boolean; onSaved: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [newKey, setNewKey] = useState("");   // chỉ hiện MỘT LẦN ngay sau khi sinh — server không trả lại lần sau
+  const [customKey, setCustomKey] = useState(""); // để trống → sinh ngẫu nhiên; nhập → dùng đúng chuỗi này
   const [toast, show] = useToast();
 
   const gen = async () => {
     if (tn.hasKey && !window.confirm("Sinh khoá mới sẽ làm khoá cũ (đang dùng ở NotebookLM/Claude) mất tác dụng ngay. Tiếp tục?")) return;
     setBusy(true);
     try {
-      const res = await api<{ ok: boolean; key: string }>("tainguyenGenKey", {});
+      const res = await api<{ ok: boolean; key: string }>("tainguyenGenKey", { key: customKey.trim() || undefined });
       setNewKey(res.key);
+      setCustomKey("");
       await onSaved();
     } catch (e) { show(e instanceof Error ? e.message : "Lỗi", "err"); }
     setBusy(false);
@@ -135,6 +137,13 @@ function TaiNguyenCard({ tn, isAdmin, onSaved }: { tn: TnStatus; isAdmin: boolea
       {isAdmin && (
         <>
           <div className="mt-3 flex flex-wrap items-center gap-2">
+            <input
+              type="text"
+              value={customKey}
+              onChange={(e) => setCustomKey(e.target.value)}
+              placeholder="Để trống = sinh ngẫu nhiên, hoặc gõ khoá tuỳ ý"
+              className="min-w-0 flex-1 rounded-md border border-line bg-surface px-2.5 py-1.5 text-[13px] text-ink placeholder:text-muted"
+            />
             <Button variant={tn.hasKey ? "secondary" : "primary"} onClick={gen} disabled={busy}>
               {busy ? <Spinner label="Đang sinh…" /> : tn.hasKey ? <><RefreshCw size={15} aria-hidden />Sinh khoá mới</> : <><Webhook size={15} aria-hidden />Bật webhook</>}
             </Button>

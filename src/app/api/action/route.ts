@@ -541,7 +541,10 @@ export async function POST(req: NextRequest) {
     // Sinh (hoặc thu hồi + sinh lại) khoá webhook nhận tài nguyên NotebookLM — dùng ở POST /api/tainguyen.
     case "tainguyenGenKey": {
       if (!isAdmin) return bad("Chỉ quản trị", 403);
-      db.settings.tainguyenApiKey = uid("tnk_") + uid("");
+      // Cho phép admin tự đặt khoá (vd đồng bộ với khoá dùng chung ở nơi khác); bỏ trống → sinh ngẫu nhiên.
+      const { key: customKey } = body as { key?: string };
+      const trimmed = typeof customKey === "string" ? customKey.trim() : "";
+      db.settings.tainguyenApiKey = trimmed || uid("tnk_") + uid("");
       logActivity(user.name, "sinh lại", "khoá webhook tài nguyên NotebookLM", "/settings");
       persist();
       return NextResponse.json({ ok: true, key: db.settings.tainguyenApiKey });
