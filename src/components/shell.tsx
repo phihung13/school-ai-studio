@@ -19,7 +19,7 @@ const NAV: Group[] = [
   { title: "Học liệu", items: [
     { href: "/tree", label: "Cây kiến thức", icon: TreePine },
     { href: "/graph", label: "Đồ thị tri thức", icon: Waypoints },
-    { href: "/library", label: "Kho học liệu", icon: Library },
+    { href: "/library", label: "Kho tài nguyên", icon: Library },
   ] },
   { title: "Vận hành", items: [
     { href: "/review", label: "Chờ duyệt", icon: ClipboardCheck, roles: ["admin", "lead"] },

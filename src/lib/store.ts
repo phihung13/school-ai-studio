@@ -3,7 +3,7 @@ import path from "path";
 import crypto from "crypto";
 import { DatabaseSync } from "node:sqlite";
 import { mirror, KV_SYNC_ON } from "./kv-sync";
-import type { User, TreeNode, Edge, Pkg, Asset, Review, Job, Proposal, Activity, Settings, OutlineNode, CardState, Question, Ladder, IdentityLink } from "./shared";
+import type { User, TreeNode, Edge, Pkg, Asset, Review, Job, Proposal, Activity, Settings, OutlineNode, CardState, Question, Ladder, IdentityLink, Comment } from "./shared";
 
 export * from "./shared";
 
@@ -11,6 +11,7 @@ export interface DB {
   users: User[]; tree: TreeNode[]; edges: Edge[]; packages: Pkg[]; assets: Asset[];
   reviews: Review[]; jobs: Job[]; proposals: Proposal[]; activity: Activity[]; settings: Settings;
   cardStates: CardState[]; questions: Question[]; ladders: Ladder[]; identityLinks: IdentityLink[];
+  comments: Comment[];
   secret: string;
 }
 
@@ -29,16 +30,16 @@ const DATA_DIR = path.join(process.cwd(), "data");
 const DB_FILE = process.env.STUDIO_DB ? path.resolve(process.env.STUDIO_DB) : path.join(DATA_DIR, "studio.db");
 const LEGACY_JSON = path.join(DATA_DIR, "db.json"); // giữ nguyên làm bản sao lưu, không bao giờ ghi lại
 
-type Coll = "users" | "tree" | "edges" | "packages" | "assets" | "reviews" | "jobs" | "proposals" | "activity" | "cardStates" | "questions" | "ladders" | "identityLinks";
-const COLLS: Coll[] = ["users", "tree", "edges", "packages", "assets", "reviews", "jobs", "proposals", "activity", "cardStates", "questions", "ladders", "identityLinks"];
+type Coll = "users" | "tree" | "edges" | "packages" | "assets" | "reviews" | "jobs" | "proposals" | "activity" | "cardStates" | "questions" | "ladders" | "identityLinks" | "comments";
+const COLLS: Coll[] = ["users", "tree", "edges", "packages", "assets", "reviews", "jobs", "proposals", "activity", "cardStates", "questions", "ladders", "identityLinks", "comments"];
 const TABLE: Record<Coll, string> = {
   users: "users", tree: "tree", edges: "edges", packages: "packages", assets: "assets",
   reviews: "reviews", jobs: "jobs", proposals: "proposals", activity: "activity", cardStates: "card_states",
-  questions: "questions", ladders: "ladders", identityLinks: "identity_links",
+  questions: "questions", ladders: "ladders", identityLinks: "identity_links", comments: "comments",
 };
 const ID_PREFIX: Record<Coll, string> = {
   users: "u", tree: "n", edges: "e", packages: "p", assets: "a",
-  reviews: "r", jobs: "j", proposals: "pr", activity: "act", cardStates: "cs", questions: "q", ladders: "l", identityLinks: "il",
+  reviews: "r", jobs: "j", proposals: "pr", activity: "act", cardStates: "cs", questions: "q", ladders: "l", identityLinks: "il", comments: "cm",
 };
 
 let conn: DatabaseSync | null = null;

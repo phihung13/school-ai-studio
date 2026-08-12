@@ -142,6 +142,16 @@ export interface Proposal {
 
 export interface Activity { id?: string; at: string; by: string; action: string; target: string; href?: string; }
 export interface FormatSkill { agent: string; style: string; imageStyle: string; guide: string; audience?: string; length?: string; constraints?: string; sample?: string }
+// Bình luận của giáo viên dưới mỗi nguyên tử (kiểu mxh: phẳng, mới nhất dưới cùng).
+export interface Comment {
+  id: string;
+  atomId: string;
+  authorId: string;
+  author: string;   // tên hiển thị
+  body: string;
+  at: string;       // iso
+}
+
 export interface Settings {
   styleGuide: string; gradeRules: string; philosophy: string; monthlyBudgetUsd: number; formatSkills?: Record<AssetFormat, FormatSkill>;
   // Kết nối Claude: nhập từ UI Cài đặt (ưu tiên) hoặc biến môi trường (fallback). Key KHÔNG BAO GIỜ trả thô về client.

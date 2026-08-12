@@ -10,6 +10,7 @@ import { backchannelLogoutUrl, callbackUrl, oidcEnabled, originOf, providers } f
 import { hubEventsOn } from "@/lib/hub-events";
 import { flashcardsForAtom } from "@/lib/flashcards";
 import { dueOf } from "@/lib/srs";
+import { scanAll, TN_FORMATS, type TnResource } from "@/lib/tainguyen";
 
 export const dynamic = "force-dynamic";
 
@@ -217,7 +218,8 @@ export async function GET(req: NextRequest) {
       const outline = chapter ? subtreeOutline(db, chapter.id) : undefined;
       const questions = db.questions.filter((q) => q.atomId === id);
       const ladders = (db.ladders ?? []).filter((l) => l.atomId === id);
-      return NextResponse.json({ atom, ancestors: anc, packages: pkgs, assets, formats: FORMATS, siblings, refs, outlineRoot: chapter?.title, outline, questions, ladders });
+      const comments = (db.comments ?? []).filter((c) => c.atomId === id).sort((a, b) => a.at.localeCompare(b.at));
+      return NextResponse.json({ atom, ancestors: anc, packages: pkgs, assets, formats: FORMATS, siblings, refs, outlineRoot: chapter?.title, outline, questions, ladders, comments });
     }
     case "package": {
       const pkg = db.packages.find((p) => p.id === id);
@@ -317,6 +319,85 @@ export async function GET(req: NextRequest) {
         .filter((x) => (!fmt || x.asset.format === fmt) && (!q || x.atom.title.toLowerCase().includes(q) || x.atom.code.toLowerCase().includes(q) || x.chain.toLowerCase().includes(q)))
         .sort((a, b) => b.asset.createdAt.localeCompare(a.asset.createdAt));
       return NextResponse.json({ items: items.slice(0, 100), formats: FORMATS, folders, archivedCount: db.assets.filter((a) => a.archived).length });
+    }
+    // ═══ KHO TÀI NGUYÊN (NotebookLM trên đĩa) — phân loại theo cây Môn › Lớp › Chương › Bài ═══
+    // Khoá nối = KC (thư mục trên đĩa) = atom.id sau đồng nhất ID, nên join thẳng vào cây thật.
+    case "tainguyen": {
+      const q = (req.nextUrl.searchParams.get("q") || "").toLowerCase().trim();
+      const fmt = req.nextUrl.searchParams.get("format") || "";
+      const dokQ = req.nextUrl.searchParams.get("dok") || "";
+      const pick = { subject: req.nextUrl.searchParams.get("subject") || "", grade: req.nextUrl.searchParams.get("grade") || "", chapter: req.nextUrl.searchParams.get("chapter") || "", lesson: req.nextUrl.searchParams.get("lesson") || "" };
+
+      interface Row { r: TnResource; atom?: TreeNode; su?: TreeNode; gr?: TreeNode; ch?: TreeNode; le?: TreeNode; chain: string }
+      const rows: Row[] = scanAll().map((r) => {
+        const atom = /^KC-\d{7}$/.test(r.kc) ? node(db, r.kc) : undefined;
+        if (!atom || atom.kind !== "atom") return { r, chain: r.folder };   // chưa khớp cây (mức bài / node lạ)
+        const anc = ancestors(db, atom.id);
+        return { r, atom, su: anc.find((n) => n.kind === "subject"), gr: anc.find((n) => n.kind === "grade"), ch: anc.find((n) => n.kind === "chapter"), le: anc.find((n) => n.kind === "lesson"), chain: anc.map((n) => n.title).join(" › ") };
+      });
+
+      // Bộ lọc rời từng chiều — `skip` để tính facet cho chính chiều đang bỏ qua (cascading).
+      const ok = (x: Row, skip: "" | "subject" | "grade" | "chapter" | "lesson" | "format" | "dok" = "") =>
+        (skip === "format" || !fmt || x.r.format === fmt)
+        && (skip === "dok" || !dokQ || String(x.r.dok ?? "") === dokQ)
+        && (skip === "subject" || !pick.subject || x.su?.id === pick.subject)
+        && (skip === "grade" || !pick.grade || x.gr?.id === pick.grade)
+        && (skip === "chapter" || !pick.chapter || x.ch?.id === pick.chapter)
+        && (skip === "lesson" || !pick.lesson || x.le?.id === pick.lesson)
+        && (!q || (x.atom?.title || "").toLowerCase().includes(q) || (x.atom?.code || "").toLowerCase().includes(q) || x.chain.toLowerCase().includes(q) || String(x.r.format).toLowerCase().includes(q));
+
+      const facet = (skip: "subject" | "grade" | "chapter" | "lesson", get: (x: Row) => TreeNode | undefined) => {
+        const m = new Map<string, { id: string; title: string; count: number; ord: number }>();
+        for (const x of rows) {
+          if (!ok(x, skip)) continue;
+          const n = get(x); if (!n) continue;
+          const cur = m.get(n.id) || { id: n.id, title: n.title, count: 0, ord: n.kind === "grade" ? (n.grade ?? n.order) : n.order };
+          cur.count++; m.set(n.id, cur);
+        }
+        return [...m.values()].sort((a, b) => a.ord - b.ord || a.title.localeCompare(b.title));
+      };
+      const countBy = <T,>(skip: "format" | "dok", get: (x: Row) => T) => {
+        const m = new Map<T, number>();
+        for (const x of rows) if (ok(x, skip)) { const k = get(x); m.set(k, (m.get(k) || 0) + 1); }
+        return m;
+      };
+      const fmtCount = countBy("format", (x) => String(x.r.format));
+      const dokCount = countBy("dok", (x) => x.r.dok);
+
+      // Gom theo nguyên tử, giữ đúng thứ tự cây (môn → lớp → chương → bài → nguyên tử)
+      const groups = new Map<string, { key: string; atomId?: string; code?: string; title: string; chain: string; subject?: string; grade?: number | null; ord: number[]; resources: TnResource[] }>();
+      for (const x of rows) {
+        if (!ok(x)) continue;
+        const key = x.atom ? x.atom.id : `disk:${x.r.folder}:${x.r.kc}`;
+        const g = groups.get(key) || {
+          key, atomId: x.atom?.id, code: x.atom?.code, title: x.atom?.title || (x.r.kc === "_ca-bai" ? `${x.r.folder.split(" / ").pop() || "Cả bài"} (cả bài)` : x.r.kc),
+          chain: x.chain, subject: x.su?.title, grade: x.gr?.grade ?? null,
+          ord: [x.su?.order ?? 999, x.gr?.grade ?? 99, x.ch?.order ?? 999, x.le?.order ?? 999, x.atom?.order ?? 999],
+          resources: [] as TnResource[],
+        };
+        g.resources.push(x.r); groups.set(key, g);
+      }
+      const list = [...groups.values()].sort((a, b) => { for (let i = 0; i < 5; i++) if (a.ord[i] !== b.ord[i]) return a.ord[i] - b.ord[i]; return a.title.localeCompare(b.title); });
+      for (const g of list) g.resources.sort((a, b) => TN_FORMATS.indexOf(a.format as never) - TN_FORMATS.indexOf(b.format as never) || (a.dok ?? 0) - (b.dok ?? 0));
+
+      // Độ phủ trong phạm vi đang chọn: bao nhiêu nguyên tử đã có tài nguyên
+      const scopeId = pick.lesson || pick.chapter || pick.grade || pick.subject;
+      const scopeAtoms = scopeId ? atomsUnder(db, scopeId) : db.tree.filter((n) => n.kind === "atom");
+      const withRes = new Set(rows.filter((x) => x.atom).map((x) => x.atom!.id));
+      const covered = scopeAtoms.filter((a) => withRes.has(a.id)).length;
+
+      return NextResponse.json({
+        groups: list,
+        facets: {
+          subjects: facet("subject", (x) => x.su), grades: facet("grade", (x) => x.gr),
+          chapters: facet("chapter", (x) => x.ch), lessons: facet("lesson", (x) => x.le),
+          formats: TN_FORMATS.filter((f) => fmtCount.get(f)).map((f) => ({ format: f, count: fmtCount.get(f) || 0 })),
+          doks: [1, 2, 3].filter((d) => dokCount.get(d)).map((d) => ({ dok: d, count: dokCount.get(d) || 0 })),
+        },
+        total: rows.filter((x) => ok(x)).length, totalAll: rows.length,
+        coverage: { covered, scopeAtoms: scopeAtoms.length },
+        unmatched: rows.filter((x) => !x.atom).length,
+      });
     }
     case "proposals":
       return NextResponse.json({ proposals: db.proposals });

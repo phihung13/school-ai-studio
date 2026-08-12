@@ -402,7 +402,7 @@ function BatchInner() {
                         <span className="truncate"><M>{it.nodeTitle}</M></span> →
                       </a>
                     ))}
-                    <a href="/library" className="inline-flex items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-1 text-[11px] font-medium text-ink-2 transition hover:border-brand hover:text-brand">Kho học liệu →</a>
+                    <a href="/library/xuong" className="inline-flex items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-1 text-[11px] font-medium text-ink-2 transition hover:border-brand hover:text-brand">Kho học liệu →</a>
                   </div>
                 )}
                 {j.log?.length > 0 && (

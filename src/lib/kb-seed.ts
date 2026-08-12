@@ -140,7 +140,7 @@ export function buildSeed(): DB {
   return {
     secret: crypto.randomBytes(24).toString("hex"),
     users, tree, edges,
-    packages: [], assets: [], reviews: [], jobs: [], proposals: [], cardStates: [], questions: [], ladders: [], identityLinks: [],
+    packages: [], assets: [], reviews: [], jobs: [], proposals: [], cardStates: [], questions: [], ladders: [], identityLinks: [], comments: [],
     activity: [{ at: new Date(0).toISOString(), by: "Hệ thống", action: "nạp", target: `${atomIds.size} nguyên tử + ${edges.length} cạnh nối từ kho phân rã`, href: "/tree" }],
     settings,
   };

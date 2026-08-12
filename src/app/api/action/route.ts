@@ -518,7 +518,7 @@ export async function POST(req: NextRequest) {
         }
       }
       const label = action === "delete" ? "xóa" : action === "archive" ? "lưu trữ" : action === "unarchive" ? "bỏ lưu trữ" : fname ? `chuyển vào thư mục "${fname}"` : "bỏ khỏi thư mục";
-      logActivity(user.name, label, `${mine.length} học liệu trong kho`, "/library");
+      logActivity(user.name, label, `${mine.length} học liệu trong kho`, "/library/xuong");
       persist();
       return NextResponse.json({ ok: true, affected: mine.length });
     }
@@ -658,7 +658,7 @@ export async function POST(req: NextRequest) {
       });
       if (!mine.length) return bad("Không có học liệu hợp lệ trong lựa chọn (có thể thuộc môn khác)", 403);
       const out = await pushAssets(db, mine);
-      if (out.pushed > 0) { logActivity(user.name, "đẩy sang Gia sư", `${out.pushed}/${out.results.length} học liệu`, "/library"); persist(); }
+      if (out.pushed > 0) { logActivity(user.name, "đẩy sang Gia sư", `${out.pushed}/${out.results.length} học liệu`, "/library/xuong"); persist(); }
       return NextResponse.json({ ok: true, ...out });
     }
     case "saveFormatSkill": {
@@ -754,6 +754,28 @@ export async function POST(req: NextRequest) {
       persist();
       return NextResponse.json({ ok: true });
     }
+
+    // ===== Bình luận dưới nguyên tử (mọi giáo viên đăng nhập) =====
+    case "commentAdd": {
+      const { atomId, body: text } = body as { atomId?: string; body?: string };
+      if (!atomId || !node(db, atomId)) return bad("Không tìm thấy nguyên tử", 404);
+      const clean = String(text || "").trim();
+      if (!clean) return bad("Nhập nội dung bình luận");
+      const c = { id: uid("cm_"), atomId, authorId: user.id, author: user.name, body: clean.slice(0, 4000), at: nowIso() };
+      db.comments.push(c);
+      persist();
+      return NextResponse.json({ ok: true, comment: c });
+    }
+    case "commentDelete": {
+      const { id } = body as { id: string };
+      const c = db.comments.find((x) => x.id === id);
+      if (!c) return bad("Không tìm thấy", 404);
+      if (c.authorId !== user.id && !isAdmin) return bad("Chỉ tác giả hoặc quản trị mới xoá được", 403);
+      db.comments = db.comments.filter((x) => x.id !== id);
+      persist();
+      return NextResponse.json({ ok: true });
+    }
+
     // ===== Quản trị người dùng =====
     case "userCreate": {
       if (!isAdmin) return bad("Chỉ quản trị được tạo tài khoản", 403);

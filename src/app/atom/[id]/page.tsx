@@ -4,15 +4,16 @@ import Link from "next/link";
 import { Wand2, Plus, FolderOpen, Eye, FolderOpen as DriveIcon, BookOpen, Film, Link as LinkIcon, ExternalLink, Cog, Network, ArrowRight, Download, Play, type LucideIcon } from "lucide-react";
 import Shell, { Breadcrumb } from "@/components/shell";
 import { getData, api, Card, PageLoading, LoadError, Button, StatusBadge, AssetBadge, Spinner, Modal, useToast, cls, FormatIcon, M } from "@/components/ui";
-import { TreeNode, Pkg, Asset, AssetFormat, Reference, User, OutlineNode, Question, Ladder, FORMAT_LABEL, LEVEL_LABEL, LEVEL_COLOR, ATOM_TYPE_LABEL, ATOM_TYPE_COLOR, readableMath } from "@/lib/shared";
+import { TreeNode, Pkg, Asset, AssetFormat, Reference, User, OutlineNode, Question, Ladder, Comment, FORMAT_LABEL, LEVEL_LABEL, LEVEL_COLOR, ATOM_TYPE_LABEL, ATOM_TYPE_COLOR, readableMath } from "@/lib/shared";
 import TreeMindmap from "@/components/tree-mindmap";
+import NotebookResources from "@/components/notebook-resources";
 
 type RefKind = Reference["kind"];
 interface AtomRef extends Reference { from: string }
 
 interface AtomData {
   atom: TreeNode; ancestors: TreeNode[]; packages: (Pkg | null)[]; assets: Asset[]; formats: AssetFormat[]; siblings: TreeNode[];
-  refs?: AtomRef[]; outline?: OutlineNode; outlineRoot?: string; questions?: Question[]; ladders?: Ladder[];
+  refs?: AtomRef[]; outline?: OutlineNode; outlineRoot?: string; questions?: Question[]; ladders?: Ladder[]; comments?: Comment[];
 }
 
 const REF_ICON: Record<RefKind, LucideIcon> = { drive: DriveIcon, sgk: BookOpen, video: Film, link: LinkIcon };
@@ -29,6 +30,8 @@ export default function AtomPage({ params }: { params: Promise<{ id: string }> }
   const [refForm, setRefForm] = useState<{ title: string; url: string; kind: RefKind }>({ title: "", url: "", kind: "link" });
   const [refBusy, setRefBusy] = useState(false);
   const [lvl, setLvl] = useState(1);   // mức đang chọn — học liệu ở Bước 2 luôn thuộc về mức này
+  const [cmt, setCmt] = useState("");
+  const [cmtBusy, setCmtBusy] = useState(false);
 
   const load = useCallback(() => {
     getData<AtomData>("atom", { id }).then(setData).catch((e) => setErr(e.message));
@@ -81,6 +84,18 @@ export default function AtomPage({ params }: { params: Promise<{ id: string }> }
     setBusy(null);
   };
 
+  const postComment = async () => {
+    if (!cmt.trim()) return;
+    setCmtBusy(true);
+    try { await api("commentAdd", { atomId: atom.id, body: cmt.trim() }); setCmt(""); load(); }
+    catch (e) { show(e instanceof Error ? e.message : "Lỗi", "err"); }
+    setCmtBusy(false);
+  };
+  const delComment = async (cid: string) => {
+    try { await api("commentDelete", { id: cid }); load(); }
+    catch (e) { show(e instanceof Error ? e.message : "Lỗi", "err"); }
+  };
+
   return (
     <Shell user={me}>
       {toast}
@@ -119,10 +134,18 @@ export default function AtomPage({ params }: { params: Promise<{ id: string }> }
           </div>
         )}
 
-        {/* ══ SẢN XUẤT: MỘT luồng duy nhất — chọn mức → bước 1 nháp gói → bước 2 sinh học liệu ══
-            (trước đây là 3 thẻ mức RỜI + ma trận định dạng × mức: hai chỗ cùng làm một việc, người dùng
-             không biết bắt đầu ở đâu. Nay học liệu luôn thuộc về MỘT mức đang chọn.) */}
-        <h2 className="mb-1 mt-8 font-display text-lg font-semibold text-ink">Sản xuất học liệu cho nguyên tử này</h2>
+        {/* ══ TÀI NGUYÊN (NotebookLM) — trình bày CHÍNH, nhúng theo nguyên tử ══ */}
+        <h2 className="mb-1 mt-8 font-display text-lg font-semibold text-ink">Tài nguyên học tập</h2>
+        <p className="mb-3 text-sm text-ink-2">Học liệu sinh qua NotebookLM cho chính nguyên tử này — bấm để xem ngay (video, slide, podcast, infographic, quiz…).</p>
+        <NotebookResources kc={atom.id} />
+
+        {/* ══ Bản nháp AI cũ (xưởng Studio) — ẨN, giữ để tham khảo ══ */}
+        <details className="group mt-8">
+          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-muted transition hover:text-ink-2">
+            <span className="rounded-md border border-line bg-surface-2 px-2 py-0.5 text-[11px]">Ẩn</span>
+            Bản nháp AI cũ (xưởng sản xuất Studio) — bấm để mở
+          </summary>
+          <div className="mt-3">
         <p className="mb-3 text-sm text-ink-2">Chọn mức độ, nháp gói tri thức, rồi sinh học liệu từ gói đó.</p>
 
         <Card className="p-4">
@@ -234,7 +257,9 @@ export default function AtomPage({ params }: { params: Promise<{ id: string }> }
             <span className="min-w-0 flex-1">Cần làm cho <b className="text-ink-2">cả cụm / cả chương</b> chứ không riêng nguyên tử này? Mở <b className="text-ink-2">Xưởng sản xuất</b> với phạm vi chọn sẵn</span>
             <ArrowRight size={14} className="shrink-0" />
           </Link>
-        </Card>
+            </Card>
+          </div>
+        </details>
 
         {data.outline && (
           <>
@@ -340,6 +365,45 @@ export default function AtomPage({ params }: { params: Promise<{ id: string }> }
               ))}
             </div>
           </>
+        )}
+        {/* ══ THẢO LUẬN — bình luận kiểu mạng xã hội, dưới cùng ══ */}
+        <div className="mb-3 mt-10 flex items-center gap-2">
+          <h2 className="font-display text-lg font-semibold text-ink">Thảo luận</h2>
+          {(data.comments?.length || 0) > 0 && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs text-muted">{data.comments!.length}</span>}
+        </div>
+        <Card className="p-3">
+          <div className="flex gap-2.5">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand text-sm font-semibold text-white">{(me?.name || "?").slice(0, 1).toUpperCase()}</span>
+            <div className="min-w-0 flex-1">
+              <textarea value={cmt} onChange={(e) => setCmt(e.target.value)} rows={2}
+                placeholder="Viết bình luận cho nguyên tử này — góp ý học liệu, chia sẻ cách dạy…"
+                onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) postComment(); }}
+                className="w-full resize-y rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/30" />
+              <div className="mt-1.5 flex items-center justify-end gap-2">
+                <span className="text-[11px] text-muted">Ctrl/⌘ + Enter để gửi</span>
+                <Button onClick={postComment} disabled={cmtBusy || !cmt.trim()}>{cmtBusy ? <Spinner label="Đang gửi…" /> : "Gửi"}</Button>
+              </div>
+            </div>
+          </div>
+        </Card>
+        {(data.comments?.length || 0) > 0 && (
+          <div className="mt-3 space-y-2.5">
+            {data.comments!.map((c) => (
+              <div key={c.id} className="flex gap-2.5">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-2 text-sm font-semibold text-ink-2">{c.author.slice(0, 1).toUpperCase()}</span>
+                <div className="min-w-0 flex-1 rounded-xl border border-line bg-surface px-3.5 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-ink">{c.author}</span>
+                    <span className="text-[11px] text-muted">{new Date(c.at).toLocaleString("vi-VN")}</span>
+                    {(me?.id === c.authorId || me?.role === "admin") && (
+                      <button onClick={() => delComment(c.id)} className="ml-auto text-[11px] text-muted transition hover:text-warn">Xoá</button>
+                    )}
+                  </div>
+                  <p className="mt-0.5 whitespace-pre-wrap text-sm text-ink-2">{c.body}</p>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 
